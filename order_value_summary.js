@@ -4,7 +4,7 @@
 // @version      0.2
 // @description  Display total value of orders on top of the order page.
 // @author       You
-// @match        https://www.arduino4.com/manage/order/*
+// @match        https://a.lnwstore.com/arduino4/order/*
 // @grant        none
 // ==/UserScript==
 

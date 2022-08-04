@@ -13,7 +13,7 @@
     "use strict";
 
     const embededUrlString =
-        "http://localhost:4200/#/secure/utilities/quote-generator";
+        "https://console.arduino4.com/#/secure/utilities/quote-generator";
     const embededUrl = new URL(embededUrlString);
 
     const lnwMainElement = document.getElementById("lnwmain");

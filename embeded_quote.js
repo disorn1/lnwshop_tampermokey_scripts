@@ -13,7 +13,7 @@
     "use strict";
 
     const embededUrlString =
-        "https://console.arduino4.com/#/secure/utilities/quote-generator";
+        "https://console.genlogic.co.th/#/secure/billings/quote-generator";
     const embededUrl = new URL(embededUrlString);
 
     const lnwMainElement = document.getElementById("lnwmain");
@@ -22,7 +22,7 @@
         mainDiv = document.createElement("iframe");
         mainDiv.setAttribute("id", "mainDiv");
         mainDiv.setAttribute("src", embededUrl);
-        mainDiv.style.height = "1200px";
+        mainDiv.style.height = "1250px";
         mainDiv.style.width = "100%";
 
         lnwMainElement.append(mainDiv);
@@ -31,18 +31,15 @@
     }
 
     console.log("embededUrl", embededUrl.origin);
-    const interval = setInterval(() => {
+    setInterval(() => {
         mainDiv.contentWindow.postMessage(
-            { status: "ready?" },
+            { status: "ready" },
             embededUrl.origin
         );
     }, 1000);
 
     window.addEventListener("message", (event) => {
         if (event.origin === embededUrl.origin && event.data) {
-            if (event.data.status === "ready") {
-                clearInterval(interval);
-            }
             if (event.data.status === "request") {
                 let message;
                 if (vm && vm.odata) {

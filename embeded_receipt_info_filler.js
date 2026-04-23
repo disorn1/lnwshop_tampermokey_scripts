@@ -27,7 +27,7 @@ const SCOPE = "receipt-info-filler";
         const _editElement = document
             .evaluate(
                 "//div[@id='lnw-contact-popup']/div[@class='step-edit']/div[@class='modal-body']",
-                document
+                document,
             )
             .iterateNext();
         if (_editElement && editElement !== _editElement) {
@@ -53,7 +53,7 @@ const SCOPE = "receipt-info-filler";
     const handshake = setInterval(() => {
         mainDiv.contentWindow?.postMessage(
             { scope: SCOPE, status: 200, data: "ready" },
-            embededUrl.origin
+            embededUrl.origin,
         );
     }, 1000);
 })();
@@ -62,7 +62,7 @@ const fillInput = (ctp) => {
     let contactBoxElement = document
         .evaluate(
             "//div[@id='lnw-contact-popup']/div[@class='step-edit']/div[@class='modal-body']//div[@class='contact-box']",
-            document
+            document,
         )
         .iterateNext();
 
@@ -70,104 +70,104 @@ const fillInput = (ctp) => {
         let taxIdInputElement = document
             .evaluate(
                 "//div[@class='col-tax_id']//input[@class='input_field']",
-                contactBoxElement
+                contactBoxElement,
             )
             .iterateNext();
         if (taxIdInputElement) {
             taxIdInputElement.value = ctp.taxId;
             taxIdInputElement.dispatchEvent(
-                new Event("input", { bubbles: true })
+                new Event("input", { bubbles: true }),
             );
         }
 
         let branchIdInputElement = document
             .evaluate(
                 "//div[@class='col-branch_id']//input[@class='input_field']",
-                contactBoxElement
+                contactBoxElement,
             )
             .iterateNext();
         if (branchIdInputElement) {
             branchIdInputElement.value = ctp.branchId;
             branchIdInputElement.dispatchEvent(
-                new Event("input", { bubbles: true })
+                new Event("input", { bubbles: true }),
             );
         }
 
         let companyNameInputElement = document
             .evaluate(
                 "//div[@class='row row-name']//input[@class='input_field']",
-                contactBoxElement
+                contactBoxElement,
             )
             .iterateNext();
 
         if (companyNameInputElement) {
             companyNameInputElement.value = ctp.companyName;
             companyNameInputElement.dispatchEvent(
-                new Event("input", { bubbles: true })
+                new Event("input", { bubbles: true }),
             );
         }
 
         let HouseNoInputElement = document
             .evaluate(
                 "//div[@class='row row-address']//input[@class='input_field']",
-                contactBoxElement
+                contactBoxElement,
             )
             .iterateNext();
         if (HouseNoInputElement) {
             HouseNoInputElement.value = ctp.addrSegment.houseNo;
             HouseNoInputElement.dispatchEvent(
-                new Event("input", { bubbles: true })
+                new Event("input", { bubbles: true }),
             );
         }
 
         let addrInputElement = document
             .evaluate(
                 "//div[@class='row row-address']//textarea[@class='input_field']",
-                contactBoxElement
+                contactBoxElement,
             )
             .iterateNext();
         if (addrInputElement) {
             addrInputElement.value = ctp.addrSegment.addrLine;
             addrInputElement.dispatchEvent(
-                new Event("input", { bubbles: true })
+                new Event("input", { bubbles: true }),
             );
         }
 
         let postcodeInputElement = document
             .evaluate(
                 "//div[@class='col col-zipcode']//input",
-                contactBoxElement
+                contactBoxElement,
             )
             .iterateNext();
         if (postcodeInputElement) {
             postcodeInputElement.value = ctp.addrSegment.postcode;
             postcodeInputElement.dispatchEvent(
-                new Event("input", { bubbles: true })
+                new Event("input", { bubbles: true }),
             );
 
             setTimeout(() => {
                 let trCount = document.evaluate(
                     "count(//table[@class='subdistrict_choices']/tbody/tr)",
-                    document
+                    document,
                 ).numberValue;
                 for (let rowNum = 1; rowNum <= trCount; rowNum++) {
                     let province = document.evaluate(
                         `//table[@class='subdistrict_choices']/tbody/tr[${rowNum}]/td[1]/text()`,
                         document,
                         null,
-                        XPathResult.STRING_TYPE
+                        XPathResult.STRING_TYPE,
                     ).stringValue;
                     let district = document.evaluate(
                         `//table[@class='subdistrict_choices']/tbody/tr[${rowNum}]/td[2]/text()`,
                         document,
                         null,
-                        XPathResult.STRING_TYPE
+                        XPathResult.STRING_TYPE,
                     ).stringValue;
                     let subDistrict = document.evaluate(
                         `//table[@class='subdistrict_choices']/tbody/tr[${rowNum}]/td[3]/text()`,
                         document,
                         null,
-                        XPathResult.STRING_TYPE
+                        XPathResult.STRING_TYPE,
                     ).stringValue;
                     if (
                         province.trim() === ctp.addrSegment.province.trim() &&
@@ -178,7 +178,7 @@ const fillInput = (ctp) => {
                         document
                             .evaluate(
                                 `//table[@class='subdistrict_choices']/tbody/tr[${rowNum}]`,
-                                document
+                                document,
                             )
                             .iterateNext()
                             .click();

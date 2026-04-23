@@ -8,27 +8,32 @@
 // @grant        none
 // ==/UserScript==
 
-(function() {
+(function () {
     function numberWithCommas(x) {
         return x.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
     }
 
-    var elements = document.querySelectorAll("div.explorer_container td.amountTD");
+    var elements = document.querySelectorAll(
+        "div.explorer_container td.amountTD",
+    );
 
     var totalOrderValue = 0;
     for (var i = 0; i < elements.length; i++) {
-        var valueString = elements[i].textContent.replace(/,/g, '');
+        var valueString = elements[i].textContent.replace(/,/g, "");
         var orderValue = parseFloat(valueString);
         if (!isNaN(orderValue)) {
-            totalOrderValue += orderValue
+            totalOrderValue += orderValue;
         }
         console.log(parseFloat(valueString));
     }
     totalOrderValue = totalOrderValue.toFixed(2);
-    console.log('totalOrderValue=' + totalOrderValue);
+    console.log("totalOrderValue=" + totalOrderValue);
 
     var title = document.querySelector("h1.title");
     if (title) {
-        title.textContent = 'รายการสั่งซื้อสินค้า (รวม ' + numberWithCommas(totalOrderValue) + ' บาท)'
+        title.textContent =
+            "รายการสั่งซื้อสินค้า (รวม " +
+            numberWithCommas(totalOrderValue) +
+            " บาท)";
     }
 })();

@@ -34,7 +34,7 @@
     setInterval(() => {
         mainDiv.contentWindow.postMessage(
             { status: "ready" },
-            embededUrl.origin
+            embededUrl.origin,
         );
     }, 1000);
 

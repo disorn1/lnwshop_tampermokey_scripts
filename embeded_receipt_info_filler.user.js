@@ -1,13 +1,19 @@
 // ==UserScript==
 // @name         Embeded receipt info filler
 // @namespace    http://tampermonkey.net/
-// @version      0.5
+// @version      1.0.0
 // @description  Embed receipt info filler in Lnwshop order page.
 // @author       You
 // @match        https://a.lnwstore.com/arduino4/order/info/*
 // @icon         data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==
 // @grant        none
+// @downloadURL  https://raw.githubusercontent.com/disorn1/lnwshop_tampermokey_scripts/master/embeded_receipt_info_filler.user.js
+// @updateURL    https://raw.githubusercontent.com/disorn1/lnwshop_tampermokey_scripts/master/embeded_receipt_info_filler.user.js
 // ==/UserScript==
+
+// Tampermonkey applies an update only when @version is STRICTLY higher than
+// the installed one. Bump it in the same commit as any code change, or the
+// push silently does nothing.
 
 (function () {
     "use strict";

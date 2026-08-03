@@ -1,12 +1,14 @@
 // ==UserScript==
 // @name         Embeded Quote
 // @namespace    http://tampermonkey.net/
-// @version      0.1
+// @version      1.0.0
 // @description  Embed quote generator iframe in Lnwshop order page.
 // @author       You
 // @match        https://a.lnwstore.com/arduino4/order/info/*
 // @icon         data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==
 // @grant        none
+// @downloadURL  https://raw.githubusercontent.com/disorn1/lnwshop_tampermokey_scripts/master/embeded_quote.user.js
+// @updateURL    https://raw.githubusercontent.com/disorn1/lnwshop_tampermokey_scripts/master/embeded_quote.user.js
 // ==/UserScript==
 
 (function () {

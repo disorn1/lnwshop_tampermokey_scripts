@@ -1,11 +1,13 @@
 // ==UserScript==
 // @name         Order Value Summary
 // @namespace    http://tampermonkey.net/
-// @version      0.2
+// @version      1.0.0
 // @description  Display total value of orders on top of the order page.
 // @author       You
 // @match        https://a.lnwstore.com/arduino4/order/*
 // @grant        none
+// @downloadURL  https://raw.githubusercontent.com/disorn1/lnwshop_tampermokey_scripts/master/order_value_summary.user.js
+// @updateURL    https://raw.githubusercontent.com/disorn1/lnwshop_tampermokey_scripts/master/order_value_summary.user.js
 // ==/UserScript==
 
 (function () {

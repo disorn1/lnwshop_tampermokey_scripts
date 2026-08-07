@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Embeded Price Calculator
 // @namespace    http://tampermonkey.net/
-// @version      1.0.0
+// @version      1.0.1
 // @description  Embed quote generator iframe in Lnwshop order page.
 // @author       You
 // @match        https://a.lnwstore.com/*/inventory/product/*
@@ -51,7 +51,7 @@ const SCOPE = "price-cal-filler";
             <button class="btn-close" id="calc-close">X</button>
         </div>
         <div id="calc-body">
-            <iframe id="calFrame" scrolling="no" style="width: 360px; height: 525px;"></iframe>
+            <iframe id="calFrame" scrolling="no" style="width: 360px; height: 545px;"></iframe>
         </div>
     `;
     let container = null;

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Embeded Price Calculator
 // @namespace    http://tampermonkey.net/
-// @version      1.0.1
+// @version      1.0.2
 // @description  Embed quote generator iframe in Lnwshop order page.
 // @author       You
 // @match        https://a.lnwstore.com/*/inventory/product/*
@@ -20,7 +20,7 @@ const SCOPE = "price-cal-filler";
             position: fixed;
             top: 20px;
             right: 20px;
-            width: 360px;
+            width: fit-content;
             background: #fff;
             border: 1px solid #ccc;
             box-shadow: 0 4px 12px rgba(0,0,0,0.15);
@@ -28,6 +28,18 @@ const SCOPE = "price-cal-filler";
             z-index: 999999;
             font-family: 'Sarabun', sans-serif, Arial;
             font-size: 13px;
+            display: flex;
+            flex-direction: column;
+            max-height: calc(100vh - 40px);
+        }
+        #calc-body {
+            flex: 1;
+            min-height: 0;
+            overflow-y: auto;
+        }
+        #calFrame {
+            display: block;
+            border: none;
         }
         #calc-header {
             background: rgb(17, 34, 51);
@@ -51,7 +63,7 @@ const SCOPE = "price-cal-filler";
             <button class="btn-close" id="calc-close">X</button>
         </div>
         <div id="calc-body">
-            <iframe id="calFrame" scrolling="no" style="width: 360px; height: 545px;"></iframe>
+            <iframe id="calFrame" scrolling="no" style="width: 360px; height: 585px;"></iframe>
         </div>
     `;
     let container = null;
@@ -122,6 +134,12 @@ const SCOPE = "price-cal-filler";
                             clearInterval(handshake);
                             console.log("cleared handshake");
                         }
+                        if (
+                            event.data.status === "resize" &&
+                            typeof event.data.height === "number"
+                        ) {
+                            calFrame.style.height = event.data.height + "px";
+                        }
                     }
                 }
             });
@@ -151,7 +169,7 @@ const SCOPE = "price-cal-filler";
                 load();
                 console.log("loading cal");
             }
-            container.style.display = "initial";
+            container.style.display = "flex";
             showCal = true;
         }
     };

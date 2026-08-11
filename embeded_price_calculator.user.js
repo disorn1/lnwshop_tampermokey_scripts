@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Embeded Price Calculator
 // @namespace    http://tampermonkey.net/
-// @version      1.2.0
+// @version      1.2.1
 // @description  Embed quote generator iframe in Lnwshop order page.
 // @author       You
 // @match        https://a.lnwstore.com/*/inventory/product/*
@@ -18,7 +18,7 @@ const SCOPE = "price-cal-filler";
     GM_addStyle(`
         #floating-calc-container {
             position: fixed;
-            top: 20px;
+            top: 60px;
             right: 20px;
             width: fit-content;
             background: #fff;
@@ -30,7 +30,7 @@ const SCOPE = "price-cal-filler";
             font-size: 13px;
             display: flex;
             flex-direction: column;
-            max-height: calc(100vh - 40px);
+            max-height: calc(100vh - 80px);
         }
         #calc-body {
             flex: 1;
@@ -89,7 +89,7 @@ const SCOPE = "price-cal-filler";
             </div>
         </div>
         <div id="calc-body">
-            <iframe id="calFrame" scrolling="no" style="width: 360px; height: 585px;"></iframe>
+            <iframe id="calFrame" scrolling="no" style="width: 360px; height: 620px;"></iframe>
         </div>
     `;
     let container = null;

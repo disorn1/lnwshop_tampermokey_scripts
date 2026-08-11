@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Embeded Price Calculator
 // @namespace    http://tampermonkey.net/
-// @version      1.1.0
+// @version      1.2.0
 // @description  Embed quote generator iframe in Lnwshop order page.
 // @author       You
 // @match        https://a.lnwstore.com/*/inventory/product/*
@@ -54,6 +54,25 @@ const SCOPE = "price-cal-filler";
             user-select: none;
         }
         .btn-close { cursor: pointer; background: none; border: none; color: white; font-weight: bold; }
+        #calc-fab {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            background: rgb(17, 34, 51);
+            color: white;
+            font-size: 24px;
+            line-height: 56px;
+            text-align: center;
+            padding: 0;
+            border: none;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            z-index: 999998;
+        }
+        #calc-fab:hover { background: rgb(34, 51, 68); }
         #calc-buttons { display: flex; gap: 10px; }
         #floating-calc-container.collapsed { min-width: 360px; }
         #floating-calc-container.collapsed #calc-body { display: none; }
@@ -172,12 +191,12 @@ const SCOPE = "price-cal-filler";
         }
     }
 
-    const bigbar = document.getElementsByClassName("bigbar");
-    const priceCalLink = document.createElement("a");
-    priceCalLink.style = "margin-right: 15px;";
-    priceCalLink.innerHTML = "เครื่องคิดเลขตั้งราคา";
+    const priceCalBtn = document.createElement("button");
+    priceCalBtn.id = "calc-fab";
+    priceCalBtn.title = "เครื่องคิดเลขตั้งราคา";
+    priceCalBtn.innerHTML = "🧮";
 
-    priceCalLink.onclick = function () {
+    priceCalBtn.onclick = function () {
         if (!showCal) {
             if (!container) {
                 load();
@@ -187,5 +206,5 @@ const SCOPE = "price-cal-filler";
             showCal = true;
         }
     };
-    bigbar[0].appendChild(priceCalLink);
+    document.body.appendChild(priceCalBtn);
 })();

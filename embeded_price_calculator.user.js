@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Embeded Price Calculator
 // @namespace    http://tampermonkey.net/
-// @version      1.0.2
+// @version      1.1.0
 // @description  Embed quote generator iframe in Lnwshop order page.
 // @author       You
 // @match        https://a.lnwstore.com/*/inventory/product/*
@@ -54,13 +54,20 @@ const SCOPE = "price-cal-filler";
             user-select: none;
         }
         .btn-close { cursor: pointer; background: none; border: none; color: white; font-weight: bold; }
+        #calc-buttons { display: flex; gap: 10px; }
+        #floating-calc-container.collapsed { min-width: 360px; }
+        #floating-calc-container.collapsed #calc-body { display: none; }
+        #floating-calc-container.collapsed #calc-header { border-radius: 8px; }
     `);
 
     // 2. สร้างโครงสร้าง HTML (UI)
     const calcHTML = `
         <div id="calc-header">
             <span>🧮 เครื่องคิดเลขตั้งราคา</span>
-            <button class="btn-close" id="calc-close">X</button>
+            <div id="calc-buttons">
+                <button class="btn-close" id="calc-collapse">−</button>
+                <button class="btn-close" id="calc-close">X</button>
+            </div>
         </div>
         <div id="calc-body">
             <iframe id="calFrame" scrolling="no" style="width: 360px; height: 585px;"></iframe>
@@ -124,6 +131,13 @@ const SCOPE = "price-cal-filler";
                     container.style.display = "none";
                     showCal = false;
                 });
+
+            // 8. ปุ่มย่อ/ขยายหน้าต่าง
+            const collapseBtn = document.getElementById("calc-collapse");
+            collapseBtn.addEventListener("click", () => {
+                const collapsed = container.classList.toggle("collapsed");
+                collapseBtn.textContent = collapsed ? "+" : "−";
+            });
 
             let handshake;
 

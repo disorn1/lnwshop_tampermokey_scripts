@@ -47,8 +47,8 @@ URL, so an installed copy updates itself from `master`.
 > happens — no error, no update, no hint. That is indistinguishable from a
 > broken URL and is the easiest way to waste an afternoon on this repo.
 
-All scripts share a `1.0.0` baseline, so "did I bump it?" is answerable at a
-glance across the repo.
+Versions are per-script and drift apart as each one is fixed, so check the
+`@version` line in the file you edited rather than assuming a shared baseline.
 
 Timing: Tampermonkey checks for updates once a day by default (adjustable in the
 dashboard, which also has a manual *Check for userscript updates*), and

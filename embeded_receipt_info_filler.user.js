@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Embeded receipt info filler
 // @namespace    http://tampermonkey.net/
-// @version      1.0.0
+// @version      1.1.0
 // @description  Embed receipt info filler in Lnwshop order page.
 // @author       You
 // @match        https://a.lnwstore.com/arduino4/order/info/*
@@ -21,7 +21,7 @@
     const SCOPE = "receipt-info-filler";
     const EMBEDED_URL = "https://console.genlogic.co.th/#/embeded/ctp-finder";
     const EMBEDED_ORIGIN = new URL(EMBEDED_URL).origin;
-    const DEBUG = true;
+    const DEBUG = false;
 
     const log = (...args) => DEBUG && console.log("[ctp-filler]", ...args);
     const warn = (...args) => console.warn("[ctp-filler]", ...args);
@@ -227,66 +227,81 @@
             return;
         }
 
+        // Scoped to the fill it is reporting on, so raising the waitFor
+        // timeout below cannot leave the interesting window unobserved.
+        let obs = null;
         if (DEBUG) {
-            const obs = new MutationObserver((muts) => {
+            obs = new MutationObserver((muts) => {
                 for (const m of muts)
                     for (const n of m.addedNodes)
                         if (n.nodeType === 1)
                             log("picker gained", n.tagName + "." + n.className);
             });
             obs.observe(picker, { childList: true, subtree: true });
-            setTimeout(() => obs.disconnect(), 12000);
         }
 
-        const zip = picker.querySelector(".col-zipcode input, input.input_zipcode");
-        if (!zip) {
-            warn("zipcode input not found");
-            dumpPicker(picker);
-            return;
-        }
-        if (seg.postcode) {
-            typeValue(zip, seg.postcode);
-            log("typed postcode =", seg.postcode);
-        }
-
-        // Lnwshop builds table.subdistrict_choices in response to the postcode,
-        // so it does not exist until now. Wait for it to carry real rows -
-        // an empty shell can be inserted before the data arrives.
-        const table = await waitFor(
-            () => {
-                const t =
-                    picker.querySelector("table.subdistrict_choices") ??
-                    box.querySelector("table.subdistrict_choices");
-                return t && t.querySelector("td") ? t : null;
-            },
-            { timeout: 8000 }
-        );
-
-        if (!table) {
-            warn("subdistrict_choices never appeared after entering the postcode");
-            dumpPicker(picker);
-            return;
-        }
-
-        const row = pickChoiceRow(table, seg);
-        if (!row) {
-            warn(
-                "no row matched",
-                { subDistrict: seg.subDistrict, district: seg.district, province: seg.province },
-                [...table.querySelectorAll("tr")].map((tr) =>
-                    [...tr.cells].map((c) => c.textContent.trim())
-                )
+        try {
+            const zip = picker.querySelector(
+                ".col-zipcode input, input.input_zipcode"
             );
-            return;
-        }
+            if (!zip) {
+                warn("zipcode input not found");
+                dumpPicker(picker);
+                return;
+            }
+            if (seg.postcode) {
+                typeValue(zip, seg.postcode);
+                log("typed postcode =", seg.postcode);
+            }
 
-        // Click the cell, not the row: the handler is normally delegated to
-        // the td, and a td click bubbles to any tr handler anyway.
-        (row.querySelector("td") ?? row).click();
-        log(
-            "selected",
-            [...row.cells].map((c) => c.textContent.trim()).join(" / ")
-        );
+            // Lnwshop builds table.subdistrict_choices in response to the
+            // postcode, so it does not exist until now. Wait for it to carry
+            // real rows - an empty shell can be inserted before the data
+            // arrives.
+            const table = await waitFor(
+                () => {
+                    const t =
+                        picker.querySelector("table.subdistrict_choices") ??
+                        box.querySelector("table.subdistrict_choices");
+                    return t && t.querySelector("td") ? t : null;
+                },
+                { timeout: 8000 }
+            );
+
+            if (!table) {
+                warn(
+                    "subdistrict_choices never appeared after entering the postcode"
+                );
+                dumpPicker(picker);
+                return;
+            }
+
+            const row = pickChoiceRow(table, seg);
+            if (!row) {
+                warn(
+                    "no row matched",
+                    {
+                        subDistrict: seg.subDistrict,
+                        district: seg.district,
+                        province: seg.province,
+                    },
+                    [...table.querySelectorAll("tr")].map((tr) =>
+                        [...tr.cells].map((c) => c.textContent.trim())
+                    )
+                );
+                return;
+            }
+
+            // Click the cell, not the row: the handler is normally delegated
+            // to the td, and a td click bubbles to any tr handler anyway.
+            (row.querySelector("td") ?? row).click();
+            log(
+                "selected",
+                [...row.cells].map((c) => c.textContent.trim()).join(" / ")
+            );
+        } finally {
+            obs?.disconnect();
+        }
     };
 
     // ------------------------------------------------------------------- fill
@@ -325,23 +340,43 @@
     // ------------------------------------------------------------ iframe wire
 
     const frame = document.createElement("iframe");
-    frame.setAttribute("id", "mainDiv");
+    // Script-specific id - embeded_quote.user.js runs on this same page and
+    // builds an iframe of its own.
+    frame.setAttribute("id", "ctp-finder-frame");
     frame.setAttribute("src", EMBEDED_URL);
     frame.style.height = "250px";
     frame.style.width = "100%";
 
-    let editElement = null;
-    setInterval(() => {
+    // Mount when the popup is inserted rather than on a 1s poll: the poll left
+    // the modal empty for up to a second after the user opened it, and an
+    // observer collapses a whole render burst into one callback.
+    const syncFrame = () => {
         const found = document.querySelector(
             "#lnw-contact-popup .step-edit .modal-body"
         );
-        if (found && editElement !== found) {
-            editElement = found;
-            editElement.prepend(frame);
+        // Keyed on where the frame actually is, not on which node was seen
+        // last - a popup that re-renders into the same node drops the frame
+        // without ever changing identity. Re-prepending reloads the iframe,
+        // so only move it when its parent is genuinely wrong.
+        if (found && frame.parentElement !== found) {
+            found.prepend(frame);
         }
-        frame.style.display =
-            frame.parentElement?.className === "modal-body" ? "" : "none";
-    }, 1000);
+        // classList, not className: whole-attribute equality fails as soon as
+        // the popup body carries a second class, and would then hide the
+        // frame on every pass with nothing logged.
+        const display = frame.parentElement?.classList.contains("modal-body")
+            ? ""
+            : "none";
+        if (frame.style.display !== display) {
+            frame.style.display = display;
+        }
+    };
+
+    new MutationObserver(syncFrame).observe(document.body, {
+        childList: true,
+        subtree: true,
+    });
+    syncFrame();
 
     window.addEventListener("message", (event) => {
         if (event.origin !== EMBEDED_ORIGIN || !event.data) return;

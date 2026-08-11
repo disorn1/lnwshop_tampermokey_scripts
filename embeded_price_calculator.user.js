@@ -1,21 +1,25 @@
 // ==UserScript==
 // @name         Embeded Price Calculator
 // @namespace    http://tampermonkey.net/
-// @version      1.2.1
+// @version      1.3.0
 // @description  Embed quote generator iframe in Lnwshop order page.
 // @author       You
 // @match        https://a.lnwstore.com/*/inventory/product/*
 // @icon         data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==
-// @grant        GM_addStyle
+// @grant        none
 // @downloadURL  https://raw.githubusercontent.com/disorn1/lnwshop_tampermokey_scripts/master/embeded_price_calculator.user.js
 // @updateURL    https://raw.githubusercontent.com/disorn1/lnwshop_tampermokey_scripts/master/embeded_price_calculator.user.js
 // ==/UserScript==
-const SCOPE = "price-cal-filler";
-
 (function () {
     "use strict";
 
-    GM_addStyle(`
+    // @grant none keeps this script in page context, which is where Lnwshop's
+    // `vm` global is reachable - the sibling scripts depend on the same thing.
+    // That rules out GM_addStyle, so the stylesheet goes in by hand.
+    const SCOPE = "price-cal-filler";
+
+    const style = document.createElement("style");
+    style.textContent = `
         #floating-calc-container {
             position: fixed;
             top: 60px;
@@ -77,7 +81,8 @@ const SCOPE = "price-cal-filler";
         #floating-calc-container.collapsed { min-width: 360px; }
         #floating-calc-container.collapsed #calc-body { display: none; }
         #floating-calc-container.collapsed #calc-header { border-radius: 8px; }
-    `);
+    `;
+    document.head.appendChild(style);
 
     // 2. สร้างโครงสร้าง HTML (UI)
     const calcHTML = `
@@ -93,102 +98,102 @@ const SCOPE = "price-cal-filler";
         </div>
     `;
     let container = null;
-    let showCal = false;
 
     function load() {
         const embededUrlString =
             "https://console.genlogic.co.th/#/embeded/price-cal";
         const embededUrl = new URL(embededUrlString);
-        const zoneBody = document.getElementById("zone_body");
-        if (zoneBody) {
-            container = document.createElement("div");
-            container.id = "floating-calc-container";
-            container.innerHTML = calcHTML;
-            document.body.appendChild(container);
 
-            const calFrame = document.getElementById("calFrame");
-            calFrame.src = embededUrl;
+        container = document.createElement("div");
+        container.id = "floating-calc-container";
+        container.innerHTML = calcHTML;
+        document.body.appendChild(container);
 
-            // 6. ระบบลากหน้าต่าง (Drag and Drop)
-            const header = document.getElementById("calc-header");
-            let isDragging = false,
-                currentX,
-                currentY,
-                initialX,
-                initialY,
-                xOffset = 0,
-                yOffset = 0;
-            header.addEventListener("mousedown", dragStart);
-            document.addEventListener("mouseup", dragEnd);
+        const calFrame = container.querySelector("#calFrame");
+        calFrame.src = embededUrl;
+
+        // 6. ระบบลากหน้าต่าง (Drag and Drop)
+        const header = container.querySelector("#calc-header");
+        let initialX = 0,
+            initialY = 0,
+            xOffset = 0,
+            yOffset = 0;
+        header.addEventListener("mousedown", dragStart);
+
+        function dragStart(e) {
+            if (e.target !== header && e.target.parentNode !== header) return;
+            initialX = e.clientX - xOffset;
+            initialY = e.clientY - yOffset;
+            // The iframe swallows mousemove/mouseup as soon as the cursor
+            // crosses into it, which strands the drag and leaves the panel
+            // stuck to the pointer. Nothing to swallow them while it is inert.
+            calFrame.style.pointerEvents = "none";
             document.addEventListener("mousemove", drag);
-            function dragStart(e) {
-                initialX = e.clientX - xOffset;
-                initialY = e.clientY - yOffset;
-                if (e.target === header || e.target.parentNode === header)
-                    isDragging = true;
-            }
-            function dragEnd(e) {
-                initialX = currentX;
-                initialY = currentY;
-                isDragging = false;
-            }
-            function drag(e) {
-                if (isDragging) {
-                    e.preventDefault();
-                    currentX = e.clientX - initialX;
-                    currentY = e.clientY - initialY;
-                    xOffset = currentX;
-                    yOffset = currentY;
-                    container.style.transform = `translate3d(${currentX}px, ${currentY}px, 0)`;
-                }
-            }
+            document.addEventListener("mouseup", dragEnd);
+        }
+        function dragEnd() {
+            calFrame.style.pointerEvents = "";
+            document.removeEventListener("mousemove", drag);
+            document.removeEventListener("mouseup", dragEnd);
+        }
+        function drag(e) {
+            e.preventDefault();
+            xOffset = e.clientX - initialX;
+            yOffset = e.clientY - initialY;
+            container.style.transform = `translate3d(${xOffset}px, ${yOffset}px, 0)`;
+        }
 
-            // 7. ปุ่มปิดหน้าต่าง
-            document
-                .getElementById("calc-close")
-                .addEventListener("click", () => {
-                    container.style.display = "none";
-                    showCal = false;
-                });
+        // 7. ปุ่มปิดหน้าต่าง
+        container.querySelector("#calc-close").addEventListener("click", () => {
+            container.style.display = "none";
+        });
 
-            // 8. ปุ่มย่อ/ขยายหน้าต่าง
-            const collapseBtn = document.getElementById("calc-collapse");
-            collapseBtn.addEventListener("click", () => {
-                const collapsed = container.classList.toggle("collapsed");
-                collapseBtn.textContent = collapsed ? "+" : "−";
-            });
+        // 8. ปุ่มย่อ/ขยายหน้าต่าง
+        const collapseBtn = container.querySelector("#calc-collapse");
+        collapseBtn.addEventListener("click", () => {
+            const collapsed = container.classList.toggle("collapsed");
+            collapseBtn.textContent = collapsed ? "+" : "−";
+        });
 
-            let handshake;
+        let handshake = null;
 
-            window.addEventListener("message", (event) => {
-                if (event.origin === embededUrl.origin && event.data) {
-                    if (event.data.scope === SCOPE) {
-                        if (event.data.status === "received" && handshake) {
-                            clearInterval(handshake);
-                            console.log("cleared handshake");
-                        }
-                        if (
-                            event.data.status === "resize" &&
-                            typeof event.data.height === "number"
-                        ) {
-                            calFrame.style.height = event.data.height + "px";
-                        }
-                    }
-                }
-            });
-
+        function startHandshake() {
+            if (handshake) return;
             handshake = setInterval(() => {
-                if (vm && vm.pdata) {
-                    console.log("sent pdata");
+                // A bare `vm` throws ReferenceError rather than reading as
+                // falsy on any page that does not define it.
+                if (typeof vm !== "undefined" && vm?.pdata) {
                     calFrame.contentWindow?.postMessage(
                         { scope: SCOPE, status: "send_data", data: vm.pdata },
                         embededUrl.origin,
                     );
                 }
             }, 1000);
-        } else {
-            console.error("Cannot find lnwmain element.");
         }
+
+        window.addEventListener("message", (event) => {
+            if (event.origin === embededUrl.origin && event.data) {
+                if (event.data.scope === SCOPE) {
+                    if (event.data.status === "received" && handshake) {
+                        clearInterval(handshake);
+                        handshake = null;
+                    }
+                    if (
+                        event.data.status === "resize" &&
+                        typeof event.data.height === "number" &&
+                        event.data.height > 0
+                    ) {
+                        calFrame.style.height = event.data.height + "px";
+                    }
+                }
+            }
+        });
+
+        // This interval is the only thing that ever sends pdata, and the ack
+        // stops it - so a reloaded iframe (auth bounce, in-frame navigation)
+        // would sit empty forever. Re-arm on load; the next ack stops it again.
+        calFrame.addEventListener("load", startHandshake);
+        startHandshake();
     }
 
     const priceCalBtn = document.createElement("button");
@@ -197,14 +202,10 @@ const SCOPE = "price-cal-filler";
     priceCalBtn.innerHTML = "🧮";
 
     priceCalBtn.onclick = function () {
-        if (!showCal) {
-            if (!container) {
-                load();
-                console.log("loading cal");
-            }
-            container.style.display = "flex";
-            showCal = true;
+        if (!container) {
+            load();
         }
+        container.style.display = "flex";
     };
     document.body.appendChild(priceCalBtn);
 })();

@@ -11,7 +11,7 @@ only bridges it into LnwShop's DOM.
 | Script | Runs on | What it does |
 | --- | --- | --- |
 | [`embeded_receipt_info_filler.user.js`](embeded_receipt_info_filler.user.js) | `/arduino4/order/info/*` | Embeds the counterparty finder in the tax-invoice contact popup. Pick a company and it fills tax ID, branch, name and address, then selects the matching postcode/subdistrict row. |
-| [`embeded_quote.user.js`](embeded_quote.user.js) | `/arduino4/order/info/*` | Embeds the quote generator below the order and hands it the order data from LnwShop's page state on request. |
+| [`embeded_quote.user.js`](embeded_quote.user.js) | `/arduino4/order/info/*` | Embeds the console below the order in embedded mode — quote generator first, with a dropdown to the tax invoice and delivery note — and hands whichever page is open the order data from LnwShop's page state on request. |
 | [`embeded_price_calculator.user.js`](embeded_price_calculator.user.js) | `/*/inventory/product/*` | Floating, draggable pricing calculator panel on the product page. |
 | [`order_value_summary.user.js`](order_value_summary.user.js) | `/arduino4/order/*` | Sums the amount column on the order list and appends the total to the page heading. |
 | [`bill.user.js`](bill.user.js) | `/arduino4/order/info/*` | Bill / receipt generation with XLSX export. |
@@ -32,9 +32,11 @@ https://raw.githubusercontent.com/disorn1/lnwshop_tampermokey_scripts/master/bil
 Installing over an existing copy updates it rather than duplicating, because
 Tampermonkey identifies a script by `@name` + `@namespace`.
 
-**The embedded pages are behind the console's auth guard.** Be signed in to
-`console.genlogic.co.th` in the same browser, or the iframes just render the
-login page.
+**The embedded pages are behind the console's auth guard, and an iframe has
+its own sign-in.** Browsers partition a framed site's storage by the top-level
+site, so being signed in to `console.genlogic.co.th` in a tab does not sign in
+the iframes on LnwShop. Sign in inside an iframe once; it returns to the page
+it was opened on.
 
 ## Updating
 
@@ -75,10 +77,19 @@ Console-side counterparts live in the `management-console` repo:
 | --- | --- | --- |
 | receipt info filler | `#/embeded/ctp-finder` | `pages/embeded/pages/receipt-info-filler` |
 | price calculator | `#/embeded/price-cal` | `pages/embeded/pages/price-cal-filler` |
-| quote | `#/secure/billings/quote-generator` | `pages/quote-generator` |
+| quote | `#/secure/billings/quote-generator?embeded=true` | `pages/quote-generator`, plus `pages/tax-invoice` and `pages/temp-delivery-note` via the dropdown |
 
 A `postMessage` payload shape is a contract across two repos with no shared
 type — change one side and you must change the other.
+
+### Embedded mode
+
+Framing a full console page (anything under `#/secure/`) with `embeded=true`
+in the URL swaps the console's side menu for a slim bar with a page dropdown.
+The dropdown lists the pages marked `showInEmbeded` in the console's
+`src/app/app-navigation.ts` — the ones built to load lnwshop data. The flag is
+read once when the frame loads, so in-frame navigation keeps the mode. The
+`#/embeded/*` routes are chrome-less widgets already and don't need it.
 
 ## Notes
 

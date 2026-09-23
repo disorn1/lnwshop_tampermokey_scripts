@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Embeded Quote
 // @namespace    http://tampermonkey.net/
-// @version      1.1.0
-// @description  Embed quote generator iframe in Lnwshop order page.
+// @version      1.2.0
+// @description  Embed the console's lnwshop document pages (quote, tax invoice, delivery note) in the Lnwshop order page.
 // @author       You
 // @match        https://a.lnwstore.com/arduino4/order/info/*
 // @icon         data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==
@@ -15,8 +15,12 @@
     "use strict";
 
     const SCOPE = "quote-generator";
+    // `embeded=true` puts the console in embedded mode: no side menu, and a
+    // dropdown to switch between the pages that load lnwshop data (quote,
+    // tax invoice, delivery note). All three speak the same ready / request /
+    // data handshake below, so switching needs nothing from this script.
     const embededUrlString =
-        "https://console.genlogic.co.th/#/secure/billings/quote-generator";
+        "https://console.genlogic.co.th/#/secure/billings/quote-generator?embeded=true";
     const embededUrl = new URL(embededUrlString);
 
     const lnwMainElement = document.getElementById("lnwmain");

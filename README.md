@@ -12,7 +12,7 @@ only bridges it into LnwShop's DOM.
 | --- | --- | --- |
 | [`embeded_receipt_info_filler.user.js`](embeded_receipt_info_filler.user.js) | `/arduino4/order/info/*` | Embeds the counterparty finder in the tax-invoice contact popup. Pick a company and it fills tax ID, branch, name and address, then selects the matching postcode/subdistrict row. |
 | [`embeded_quote.user.js`](embeded_quote.user.js) | `/arduino4/order/info/*` | Embeds the console below the order in embedded mode — quote generator first, with a dropdown to the tax invoice and delivery note — and hands whichever page is open the order data from LnwShop's page state on request. |
-| [`embeded_price_calculator.user.js`](embeded_price_calculator.user.js) | `/*/inventory/product/*` | Floating, draggable pricing calculator panel on the product page. |
+| [`embeded_price_calculator.user.js`](embeded_price_calculator.user.js) | `/*/inventory/product/*` | Floating, draggable pricing calculator panel on the product page. Its "ตั้งราคา →" link opens the price setter (`#/embeded/price-set`) in the same panel: one base price in, every channel tab filled by the align rules — see below. |
 | [`order_value_summary.user.js`](order_value_summary.user.js) | `/arduino4/order/*` | Sums the amount column on the order list and appends the total to the page heading. |
 | [`bill.user.js`](bill.user.js) | `/arduino4/order/info/*` | Bill / receipt generation with XLSX export. |
 
@@ -77,10 +77,37 @@ Console-side counterparts live in the `management-console` repo:
 | --- | --- | --- |
 | receipt info filler | `#/embeded/ctp-finder` | `pages/embeded/pages/receipt-info-filler` |
 | price calculator | `#/embeded/price-cal` | `pages/embeded/pages/price-cal-filler` |
+| price setter (same iframe, same scope) | `#/embeded/price-set` | `pages/embeded/pages/price-set-filler`, rules in `shared/config/channel-price-rules.ts` |
 | quote | `#/secure/billings/quote-generator?embeded=true` | `pages/quote-generator`, plus `pages/tax-invoice` and `pages/temp-delivery-note` via the dropdown |
 
 A `postMessage` payload shape is a contract across two repos with no shared
 type — change one side and you must change the other.
+
+### Price setter (`embeded_price_calculator.user.js` ≥ 1.4.0)
+
+The price-set page sends `{ scope, action: "apply-prices", param: { pid, base, channels } }`
+and the userscript fills LnwShop's product form **without pressing บันทึก** — the
+person checks the form and saves. It replies `{ scope, status: "applied", results }`,
+one `{ target, label, ok, message }` per item. The page also sends
+`{ scope, status: "request" }` when it opens (it is reached by an in-frame link, so
+the iframe `load` handshake never fires for it) and the host answers with `send_data`.
+
+How a channel is filled mirrors `lnw-crawler-v2`'s `price_dom.ts` / `price_tabs.ts`,
+the code that repriced the whole catalogue:
+
+- A tab is found by the `.../channel/<boxKey>` link inside its price box, never by
+  shop name or shop id — the box identifies itself.
+- A shop tab set to "ใช้ราคาขายเหมือน X หลัก" (Shopee General4 → Shopee หลัก, Lazada
+  genlogic → Lazada หลัก) is written **at the main tab**, then re-read to confirm it
+  still follows and shows the new price. If another shop tab follows the same main
+  tab, the item is refused with a message, because that shop's price would move too.
+- `kind: "sync"` (LINE Shopping) flips the switch back to "ใช้ราคาขายเหมือน LnwShop".
+- Every write waits for `.finaltotal` to show the price before it counts as done.
+- After each tab click the script waits for the visible area to actually change:
+  reading the box right after `click()` still returns the previous tab's box (Vue
+  switches a moment later), which wrote values into the wrong tab in the first test.
+
+`window.__lnwPriceSetter.applyPrices(request)` is exposed for DevTools / tests.
 
 ### Embedded mode
 

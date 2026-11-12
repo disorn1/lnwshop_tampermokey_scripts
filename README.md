@@ -10,7 +10,7 @@ only bridges it into LnwShop's DOM.
 
 | Script | Runs on | What it does |
 | --- | --- | --- |
-| [`embeded_receipt_info_filler.user.js`](embeded_receipt_info_filler.user.js) | `/arduino4/order/info/*` | Embeds the counterparty finder in the tax-invoice contact popup. Pick a company and it switches สถานะ to นิติบุคคล (the branch field exists only there), fills tax ID, branch, name and address, then selects the matching postcode/subdistrict row. `window.__ctpFill(ctp)` runs the fill from DevTools. |
+| [`embeded_receipt_info_filler.user.js`](embeded_receipt_info_filler.user.js) | `/arduino4/order/info/*` | Embeds the console's receipt filler in the tax-invoice contact popup: search a company, or paste what the customer typed in chat. It sets สถานะ and ประเภทเลขที่, fills tax ID, branch, name, address, e-mail and phone, then selects the matching postcode/subdistrict row — see below. `window.__ctpFill(param)` runs the fill from DevTools. |
 | [`embeded_quote.user.js`](embeded_quote.user.js) | `/arduino4/order/info/*` | Embeds the console below the order in embedded mode — quote generator first, with a dropdown to the tax invoice and delivery note — and hands whichever page is open the order data from LnwShop's page state on request. |
 | [`embeded_price_calculator.user.js`](embeded_price_calculator.user.js) | `/*/inventory/product/*` | Floating, draggable pricing calculator panel on the product page. Its "ตั้งราคา →" link opens the price setter (`#/embeded/price-set`) in the same panel: one base price in, every channel tab filled by the align rules — see below. |
 | [`order_value_summary.user.js`](order_value_summary.user.js) | `/arduino4/order/*` | Sums the amount column on the order list and appends the total to the page heading. |
@@ -82,6 +82,38 @@ Console-side counterparts live in the `management-console` repo:
 
 A `postMessage` payload shape is a contract across two repos with no shared
 type — change one side and you must change the other.
+
+### Receipt info filler (`embeded_receipt_info_filler.user.js` ≥ 1.3.0)
+
+The console page has two modes: the company search, and a box to paste what a
+customer typed in chat. Either ends in one message:
+
+```
+iframe --> host   { scope: "receipt-info-filler", action: "ctp-selected", param }
+iframe --> host   { scope: "receipt-info-filler", action: "resize", param: { height } }
+```
+
+`param` is `ReceiptFillPayload` in the console's
+`pages/embeded/pages/receipt-info-filler/receipt-fill-payload.ts`:
+`companyName`, `taxId`, `branchId`, `addrSegment` (`houseNo`, `addrLine`,
+`subDistrict`, `district`, `province`, `postcode`), and optionally
+`personType` (`company` | `personal`), `idType` (`tax_id` | `none`), `email`
+and `phone`.
+
+- No `personType` means a company, and no `idType` means `tax_id`: that is
+  what consoles older than this script send.
+- `email` / `phone` are filled only when present and non-empty; otherwise the
+  field keeps what LnwShop already has.
+- The script sets สถานะ and ประเภทเลขที่, then waits for the form to follow.
+  LnwShop renders the branch field only for นิติบุคคล with tax_id, and
+  ไม่ระบุ (`idType: "none"`) hides the ID field.
+- `resize` sizes the iframe to the page (clamped to 120–900 px). The page
+  answers only `https://a.lnwstore.com` and posts to that origin alone.
+- "ready" carries `protocol: 2`. The paste mode will not fill through a script
+  that sends none (≤ 1.2.0, which files everyone as a company) and says to
+  update it instead.
+
+Nothing is saved: the person checks the form and presses บันทึก.
 
 ### Price setter (`embeded_price_calculator.user.js` ≥ 1.4.0)
 

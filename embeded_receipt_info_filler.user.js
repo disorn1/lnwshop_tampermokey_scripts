@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Embeded receipt info filler
 // @namespace    http://tampermonkey.net/
-// @version      1.2.0
+// @version      1.3.0
 // @description  Embed receipt info filler in Lnwshop order page.
 // @author       You
 // @match        https://a.lnwstore.com/arduino4/order/info/*
@@ -19,6 +19,10 @@
     "use strict";
 
     const SCOPE = "receipt-info-filler";
+    // Sent with "ready" so the console knows which payload this script reads.
+    // 2 (1.3.0): personType / idType / email / phone. The console's paste
+    // mode refuses to fill through anything older.
+    const PROTOCOL = 2;
     const EMBEDED_URL = "https://console.genlogic.co.th/#/embeded/ctp-finder";
     const EMBEDED_ORIGIN = new URL(EMBEDED_URL).origin;
     const DEBUG = false;
@@ -133,44 +137,48 @@
             "#lnw-contact-popup .step-edit .modal-body .contact-box"
         );
 
-    // Class-aware and scoped. The previous XPaths used @class='input_field',
-    // which is whole-attribute equality - it misses class="input_field foo",
-    // and this form really does carry multi-class inputs
-    // (e.g. class="input_zipcode input_field").
-    // LnwShop's form (redesigned 2026-11) opens on "บุคคลธรรมดา" and renders
-    // the branch field (.col-branch_id) only once "นิติบุคคล" is picked. Every
-    // counterparty the console sends is a registered company, so switch to
-    // นิติบุคคล first and wait for the branch field to exist.
-    const selectJuristic = async () => {
-        const radio = getContactBox()?.querySelector(
-            'input[name="corporate_flag"][value="1"]'
+    // "สถานะ" (LnwShop's form since 2026-11) and "ประเภทเลขที่" decide which
+    // fields exist. Checked on the live form 2026-11-12:
+    // - corporate_flag 1 = นิติบุคคล, 0 = บุคคลธรรมดา; the form opens on 0.
+    // - id type tax_id / passport / none; none hides the ID field.
+    // - The branch field (.col-branch_id) exists only for นิติบุคคล with
+    //   tax_id. Switching สถานะ keeps the id type.
+    // So set both, then wait for the form to show what this pair implies.
+    const selectPersonAndIdType = async (isCompany, idType) => {
+        const box = getContactBox();
+        const radio = box?.querySelector(
+            `input[name="corporate_flag"][value="${isCompany ? 1 : 0}"]`
         );
-        if (!radio) {
-            warn("corporate_flag radio not found - markup changed again");
+        const select = box?.querySelector(".col-id_type select");
+        if (!radio || !select) {
+            warn("สถานะ / ประเภทเลขที่ not found - markup changed again");
             return;
         }
         // The radio itself is hidden; the label is what a person clicks.
         if (!radio.checked) (radio.closest("label") ?? radio).click();
-        const branch = await waitFor(
-            () => getContactBox()?.querySelector(".col-branch_id input"),
+        if (select.value !== idType) {
+            select.value = idType;
+            select.dispatchEvent(new Event("change", { bubbles: true }));
+        }
+        const settled = await waitFor(
+            () => {
+                const now = getContactBox();
+                return (
+                    now &&
+                    !!now.querySelector(".col-branch_id input") ===
+                        (isCompany && idType === "tax_id") &&
+                    !!now.querySelector(".col-tax_id input") === (idType !== "none")
+                );
+            },
             { timeout: 3000 }
         );
-        if (!branch) warn("branch field did not appear after นิติบุคคล");
+        if (!settled) warn("form did not follow สถานะ / ประเภทเลขที่");
     };
 
-    // "ประเภทเลขที่": tax_id / passport / none. tax_id is the default, but a
-    // contact opened for editing may carry another.
-    const selectTaxIdType = (box) => {
-        const select = box.querySelector(".col-id_type select");
-        if (!select) {
-            warn("field not found: idType");
-            return;
-        }
-        if (select.value === "tax_id") return;
-        select.value = "tax_id";
-        select.dispatchEvent(new Event("change", { bubbles: true }));
-    };
-
+    // Class-aware and scoped. The previous XPaths used @class='input_field',
+    // which is whole-attribute equality - it misses class="input_field foo",
+    // and this form really does carry multi-class inputs
+    // (e.g. class="input_zipcode input_field").
     const setSimpleFields = (box, ctp) => {
         const seg = ctp.addrSegment ?? {};
 
@@ -193,12 +201,22 @@
                 .find((el) => el) ?? null;
 
         const targets = [
-            ["taxId", box.querySelector(".col-tax_id input"), ctp.taxId],
-            ["branchId", box.querySelector(".col-branch_id input"), ctp.branchId],
+            // ไม่ระบุ hides the ID field; there is nothing to fill.
+            ctp.idType !== "none" && ["taxId", box.querySelector(".col-tax_id input"), ctp.taxId],
+            ctp.personType === "company" && [
+                "branchId",
+                box.querySelector(".col-branch_id input"),
+                ctp.branchId,
+            ],
             ["companyName", box.querySelector(".row-name input"), ctp.companyName],
             ["houseNo", houseNoInput, seg.houseNo],
             ["addrLine", addrTextarea, seg.addrLine],
-        ];
+            // Sent only by the pasted-text filler, and only when the customer
+            // gave one. Absent or empty means "leave the field alone": LnwShop
+            // may already hold the buyer's details.
+            !!ctp.email && ["email", box.querySelector(".col-email input"), ctp.email],
+            !!ctp.phone && ["phone", box.querySelector(".col-telephone input"), ctp.phone],
+        ].filter(Boolean);
 
         for (const [key, el, value] of targets) {
             if (!el) {
@@ -346,20 +364,22 @@
 
     // ------------------------------------------------------------------- fill
 
-    const fillInput = async (ctp) => {
+    const fillInput = async (param) => {
         if (!getContactBox()) {
             warn("contact-box not found");
             return;
         }
+        // A console older than this script sends neither field: it only knew
+        // companies with a tax ID.
+        const ctp = { personType: "company", idType: "tax_id", ...param };
         log("filling", ctp);
         // Before any other field: the switch re-renders the tax-id row.
-        await selectJuristic();
+        await selectPersonAndIdType(ctp.personType === "company", ctp.idType);
         const box = getContactBox();
         if (!box) {
-            warn("contact-box gone after selecting นิติบุคคล");
+            warn("contact-box gone after the สถานะ switch");
             return;
         }
-        selectTaxIdType(box);
         setSimpleFields(box, ctp);
         await fillAddressPicker(box, ctp.addrSegment ?? {});
     };
@@ -428,11 +448,21 @@
     });
     syncFrame();
 
+    // The page reports its content height; only the host can size the frame.
+    // Clamped so a broken report can neither collapse it nor push the
+    // popup's own form out of reach.
+    const resizeFrame = (height) => {
+        if (!Number.isFinite(height)) return;
+        frame.style.height = `${Math.min(Math.max(Math.ceil(height), 120), 900)}px`;
+    };
+
     window.addEventListener("message", (event) => {
         if (event.origin !== EMBEDED_ORIGIN || !event.data) return;
         if (event.data.scope !== SCOPE) return;
         if (event.data.action === "ctp-selected" && event.data.param) {
             fillInput(event.data.param);
+        } else if (event.data.action === "resize") {
+            resizeFrame(event.data.param?.height);
         }
     });
 
@@ -442,7 +472,7 @@
         // rather than deliver cross-origin. Swallow it; the next tick works.
         try {
             frame.contentWindow?.postMessage(
-                { scope: SCOPE, status: 200, data: "ready" },
+                { scope: SCOPE, status: 200, data: "ready", protocol: PROTOCOL },
                 EMBEDED_ORIGIN
             );
         } catch (e) {

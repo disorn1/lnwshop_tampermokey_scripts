@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Embeded receipt info filler
 // @namespace    http://tampermonkey.net/
-// @version      1.1.0
+// @version      1.2.0
 // @description  Embed receipt info filler in Lnwshop order page.
 // @author       You
 // @match        https://a.lnwstore.com/arduino4/order/info/*
@@ -137,15 +137,55 @@
     // which is whole-attribute equality - it misses class="input_field foo",
     // and this form really does carry multi-class inputs
     // (e.g. class="input_zipcode input_field").
+    // LnwShop's form (redesigned 2026-11) opens on "บุคคลธรรมดา" and renders
+    // the branch field (.col-branch_id) only once "นิติบุคคล" is picked. Every
+    // counterparty the console sends is a registered company, so switch to
+    // นิติบุคคล first and wait for the branch field to exist.
+    const selectJuristic = async () => {
+        const radio = getContactBox()?.querySelector(
+            'input[name="corporate_flag"][value="1"]'
+        );
+        if (!radio) {
+            warn("corporate_flag radio not found - markup changed again");
+            return;
+        }
+        // The radio itself is hidden; the label is what a person clicks.
+        if (!radio.checked) (radio.closest("label") ?? radio).click();
+        const branch = await waitFor(
+            () => getContactBox()?.querySelector(".col-branch_id input"),
+            { timeout: 3000 }
+        );
+        if (!branch) warn("branch field did not appear after นิติบุคคล");
+    };
+
+    // "ประเภทเลขที่": tax_id / passport / none. tax_id is the default, but a
+    // contact opened for editing may carry another.
+    const selectTaxIdType = (box) => {
+        const select = box.querySelector(".col-id_type select");
+        if (!select) {
+            warn("field not found: idType");
+            return;
+        }
+        if (select.value === "tax_id") return;
+        select.value = "tax_id";
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+    };
+
     const setSimpleFields = (box, ctp) => {
         const seg = ctp.addrSegment ?? {};
 
-        // There are two div.row.row-address blocks. Rather than trusting
-        // document order, pick them by what they contain.
+        // There are three div.row.row-address blocks: the บุคคลธรรมดา /
+        // นิติบุคคล radios, the house number, and the address textarea.
+        // Rather than trusting document order, pick them by what they
+        // contain - and skip the radios, which are inputs too.
         const addressRows = [...box.querySelectorAll(".row-address")];
         const houseNoInput =
             addressRows
-                .map((r) => r.querySelector("input"))
+                .map((r) =>
+                    r.querySelector(
+                        'input:not([type="radio"]):not([type="checkbox"])'
+                    )
+                )
                 .find((el) => el) ?? null;
         const addrTextarea =
             addressRows
@@ -307,15 +347,25 @@
     // ------------------------------------------------------------------- fill
 
     const fillInput = async (ctp) => {
-        const box = getContactBox();
-        if (!box) {
+        if (!getContactBox()) {
             warn("contact-box not found");
             return;
         }
         log("filling", ctp);
+        // Before any other field: the switch re-renders the tax-id row.
+        await selectJuristic();
+        const box = getContactBox();
+        if (!box) {
+            warn("contact-box gone after selecting นิติบุคคล");
+            return;
+        }
+        selectTaxIdType(box);
         setSimpleFields(box, ctp);
         await fillAddressPicker(box, ctp.addrSegment ?? {});
     };
+
+    // DevTools / test entry point: fills the open popup without the iframe.
+    window.__ctpFill = fillInput;
 
     // Paste-in diagnostic: dumps whatever the address widget currently is,
     // so the picker can be adjusted if Lnwshop redesigns it again.

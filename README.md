@@ -10,7 +10,7 @@ only bridges it into LnwShop's DOM.
 
 | Script | Runs on | What it does |
 | --- | --- | --- |
-| [`embeded_receipt_info_filler.user.js`](embeded_receipt_info_filler.user.js) | `/arduino4/order/info/*` | Embeds the counterparty finder in the tax-invoice contact popup. Pick a company and it fills tax ID, branch, name and address, then selects the matching postcode/subdistrict row. |
+| [`embeded_receipt_info_filler.user.js`](embeded_receipt_info_filler.user.js) | `/arduino4/order/info/*` | Embeds the counterparty finder in the tax-invoice contact popup. Pick a company and it switches สถานะ to นิติบุคคล (the branch field exists only there), fills tax ID, branch, name and address, then selects the matching postcode/subdistrict row. `window.__ctpFill(ctp)` runs the fill from DevTools. |
 | [`embeded_quote.user.js`](embeded_quote.user.js) | `/arduino4/order/info/*` | Embeds the console below the order in embedded mode — quote generator first, with a dropdown to the tax invoice and delivery note — and hands whichever page is open the order data from LnwShop's page state on request. |
 | [`embeded_price_calculator.user.js`](embeded_price_calculator.user.js) | `/*/inventory/product/*` | Floating, draggable pricing calculator panel on the product page. Its "ตั้งราคา →" link opens the price setter (`#/embeded/price-set`) in the same panel: one base price in, every channel tab filled by the align rules — see below. |
 | [`order_value_summary.user.js`](order_value_summary.user.js) | `/arduino4/order/*` | Sums the amount column on the order list and appends the total to the page heading. |

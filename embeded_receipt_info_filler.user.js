@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Embeded receipt info filler
 // @namespace    http://tampermonkey.net/
-// @version      1.3.0
+// @version      1.3.1
 // @description  Embed receipt info filler in Lnwshop order page.
 // @author       You
 // @match        https://a.lnwstore.com/arduino4/order/info/*
@@ -380,8 +380,23 @@
             warn("contact-box gone after the สถานะ switch");
             return;
         }
-        setSimpleFields(box, ctp);
-        await fillAddressPicker(box, ctp.addrSegment ?? {});
+        try {
+            setSimpleFields(box, ctp);
+            await fillAddressPicker(box, ctp.addrSegment ?? {});
+        } finally {
+            blurForm();
+        }
+    };
+
+    // Filling focuses each field in turn and ends in the postcode, a
+    // type="number" input: left focused, a mouse-wheel scroll over the popup
+    // changes the postcode. Only after the subdistrict row is picked - the
+    // postcode widget may react to losing focus.
+    const blurForm = () => {
+        const active = document.activeElement;
+        if (active instanceof HTMLElement && getContactBox()?.contains(active)) {
+            active.blur();
+        }
     };
 
     // DevTools / test entry point: fills the open popup without the iframe.

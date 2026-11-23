@@ -10,7 +10,7 @@ only bridges it into LnwShop's DOM.
 
 | Script | Runs on | What it does |
 | --- | --- | --- |
-| [`embeded_receipt_info_filler.user.js`](embeded_receipt_info_filler.user.js) | `/arduino4/order/info/*` | Embeds the console's receipt filler in the tax-invoice contact popup: search a company, or paste what the customer typed in chat. It sets สถานะ and ประเภทเลขที่, fills tax ID, branch, name, address, e-mail and phone, then selects the matching postcode/subdistrict row — see below. `window.__ctpFill(param)` runs the fill from DevTools. |
+| [`embeded_receipt_info_filler.user.js`](embeded_receipt_info_filler.user.js) | `/arduino4/order/info/*` | Embeds the console's receipt filler in the contact popup, for both the receipt form (ข้อมูลใบเสร็จ) and the recipient form (ข้อมูลผู้รับ): search a company, or paste what the customer typed in chat. It fills the name, address, e-mail and phone (and on the receipt form สถานะ, ประเภทเลขที่, tax ID and branch), then selects the matching postcode/subdistrict row — see below. `window.__ctpFill(param)` runs the fill from DevTools. |
 | [`embeded_quote.user.js`](embeded_quote.user.js) | `/arduino4/order/info/*` | Embeds the console below the order in embedded mode — quote generator first, with a dropdown to the tax invoice and delivery note — and hands whichever page is open the order data from LnwShop's page state on request. |
 | [`embeded_price_calculator.user.js`](embeded_price_calculator.user.js) | `/*/inventory/product/*` | Floating, draggable pricing calculator panel on the product page. Its "ตั้งราคา →" link opens the price setter (`#/embeded/price-set`) in the same panel: one base price in, every channel tab filled by the align rules — see below. |
 | [`order_value_summary.user.js`](order_value_summary.user.js) | `/arduino4/order/*` | Sums the amount column on the order list and appends the total to the page heading. |
@@ -112,6 +112,12 @@ and `phone`.
 - "ready" carries `protocol: 2`. The paste mode will not fill through a script
   that sends none (≤ 1.2.0, which files everyone as a company) and says to
   update it instead.
+- The recipient form (≥ 1.4.0) has no สถานะ or tax ID. The house number and
+  address line go into its one ที่อยู่ textarea, the phone into เบอร์โทรศัพท์
+  (and เบอร์มือถือ when it is a mobile). LnwShop's own address helper sits
+  above it in a separate box and is left alone.
+- After filling, no field keeps the focus: the postcode is a number input, and
+  a mouse-wheel scroll would change it (1.3.1).
 
 Nothing is saved: the person checks the form and presses บันทึก.
 

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Embeded receipt info filler
 // @namespace    http://tampermonkey.net/
-// @version      1.3.1
+// @version      1.4.0
 // @description  Embed receipt info filler in Lnwshop order page.
 // @author       You
 // @match        https://a.lnwstore.com/arduino4/order/info/*
@@ -132,10 +132,18 @@
 
     // ------------------------------------------------------------ form fields
 
+    // The popup's edit step holds one of two forms (checked 2026-11-23):
+    // - receipt (ข้อมูลใบเสร็จ): สถานะ, ประเภทเลขที่, tax ID, branch, name,
+    //   house number + address line, postcode, e-mail, telephone;
+    // - recipient (ข้อมูลผู้รับ): e-mail, mobile, name, ONE address
+    //   textarea, postcode, telephone*. LnwShop's address helper sits above
+    //   it in a contact-box of its own, so take the box with the name row.
     const getContactBox = () =>
-        document.querySelector(
-            "#lnw-contact-popup .step-edit .modal-body .contact-box"
-        );
+        [
+            ...document.querySelectorAll("#lnw-contact-popup .step-edit .contact-box"),
+        ].find((box) => box.querySelector(".row-name")) ?? null;
+
+    const isRecipientForm = (box) => !box.querySelector(".row-tax_id");
 
     // "สถานะ" (LnwShop's form since 2026-11) and "ประเภทเลขที่" decide which
     // fields exist. Checked on the live form 2026-11-12:
@@ -216,9 +224,37 @@
             // may already hold the buyer's details.
             !!ctp.email && ["email", box.querySelector(".col-email input"), ctp.email],
             !!ctp.phone && ["phone", box.querySelector(".col-telephone input"), ctp.phone],
-        ].filter(Boolean);
+        ];
+        applyTargets(targets);
+    };
 
-        for (const [key, el, value] of targets) {
+    // The recipient form: no สถานะ or tax ID, and one textarea for the
+    // house number and the address line.
+    const setRecipientFields = (box, ctp) => {
+        const seg = ctp.addrSegment ?? {};
+        // E-mail and mobile carry no class of their own; find them by label.
+        const byLabel = (text) =>
+            [...box.querySelectorAll(".row")]
+                .find((row) => row.querySelector("label")?.textContent.trim() === text)
+                ?.querySelector("input") ?? null;
+        const isMobile = /^0[689]\d{8}$/.test(ctp.phone ?? "");
+        applyTargets([
+            ["name", box.querySelector(".row-name input"), ctp.companyName],
+            [
+                "address",
+                box.querySelector(".row-address textarea"),
+                [seg.houseNo, seg.addrLine].filter(Boolean).join(" "),
+            ],
+            !!ctp.email && ["email", byLabel("อีเมล"), ctp.email],
+            // เบอร์โทรศัพท์ is required here; the mobile, for SMS, only
+            // when the number is one.
+            !!ctp.phone && ["telephone", box.querySelector(".row-telephone input"), ctp.phone],
+            isMobile && ["mobile", byLabel("เบอร์มือถือ"), ctp.phone],
+        ]);
+    };
+
+    const applyTargets = (targets) => {
+        for (const [key, el, value] of targets.filter(Boolean)) {
             if (!el) {
                 warn("field not found:", key);
                 continue;
@@ -365,7 +401,8 @@
     // ------------------------------------------------------------------- fill
 
     const fillInput = async (param) => {
-        if (!getContactBox()) {
+        const form = getContactBox();
+        if (!form) {
             warn("contact-box not found");
             return;
         }
@@ -373,15 +410,18 @@
         // companies with a tax ID.
         const ctp = { personType: "company", idType: "tax_id", ...param };
         log("filling", ctp);
-        // Before any other field: the switch re-renders the tax-id row.
-        await selectPersonAndIdType(ctp.personType === "company", ctp.idType);
+        const recipient = isRecipientForm(form);
+        if (!recipient) {
+            // Before any other field: the switch re-renders the tax-id row.
+            await selectPersonAndIdType(ctp.personType === "company", ctp.idType);
+        }
         const box = getContactBox();
         if (!box) {
             warn("contact-box gone after the สถานะ switch");
             return;
         }
         try {
-            setSimpleFields(box, ctp);
+            (recipient ? setRecipientFields : setSimpleFields)(box, ctp);
             await fillAddressPicker(box, ctp.addrSegment ?? {});
         } finally {
             blurForm();

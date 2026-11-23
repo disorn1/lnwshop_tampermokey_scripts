@@ -83,39 +83,46 @@ Console-side counterparts live in the `management-console` repo:
 A `postMessage` payload shape is a contract across two repos with no shared
 type — change one side and you must change the other.
 
-### Receipt info filler (`embeded_receipt_info_filler.user.js` ≥ 1.3.0)
+### Receipt info filler (`embeded_receipt_info_filler.user.js` ≥ 1.5.0)
 
-The console page has two modes: the company search, and a box to paste what a
+The script frames the console page into LnwShop's contact popup on both of its
+forms: the receipt form (ข้อมูลใบเสร็จ) and the recipient form (ข้อมูลผู้รับ).
+The page has two modes: the company search, and a box to paste what a
 customer typed in chat. Either ends in one message:
 
 ```
-iframe --> host   { scope: "receipt-info-filler", action: "ctp-selected", param }
-iframe --> host   { scope: "receipt-info-filler", action: "resize", param: { height } }
+host   --> iframe   { scope, status: 200, data: "ready", protocol: 3, form }   every 1s
+iframe --> host     { scope: "receipt-info-filler", action: "ctp-selected", param }
+iframe --> host     { scope: "receipt-info-filler", action: "resize", param: { height } }
 ```
 
-`param` is `ReceiptFillPayload` in the console's
+`form` is `"receipt"`, `"recipient"`, or `null` while no form is open. `param`
+is `ReceiptFillPayload` in the console's
 `pages/embeded/pages/receipt-info-filler/receipt-fill-payload.ts`:
-`companyName`, `taxId`, `branchId`, `addrSegment` (`houseNo`, `addrLine`,
-`subDistrict`, `district`, `province`, `postcode`), and optionally
-`personType` (`company` | `personal`), `idType` (`tax_id` | `none`), `email`
-and `phone`.
+`personType` (`company` | `personal`), `idType` (`tax_id` | `passport` |
+`none`), `companyName`, `taxId`, `branchId`, `addrSegment` (`houseNo`,
+`addrLine`, `subDistrict`, `district`, `province`, `postcode`), and
+optionally `email` and `phone`.
 
 - No `personType` means a company, and no `idType` means `tax_id`: that is
-  what consoles older than this script send.
-- `email` / `phone` are filled only when present and non-empty; otherwise the
-  field keeps what LnwShop already has.
-- The script sets สถานะ and ประเภทเลขที่, then waits for the form to follow.
-  LnwShop renders the branch field only for นิติบุคคล with tax_id, and
-  ไม่ระบุ (`idType: "none"`) hides the ID field.
+  what consoles older than 1.3.0's counterpart send.
+- **An empty value is never written** (1.5.0). The field keeps what LnwShop
+  already has, and with no postcode the area is left alone too.
+- Receipt form: the script sets สถานะ and ประเภทเลขที่, then waits for the form
+  to follow. LnwShop renders the branch field only for นิติบุคคล with tax_id,
+  and ไม่ระบุ (`idType: "none"`) hides the ID field. The receipt form is told
+  apart by its สถานะ radio.
+- Recipient form (≥ 1.4.0): no สถานะ or tax ID. The house number and address
+  line go into its one ที่อยู่ textarea, the phone into เบอร์โทรศัพท์ (and
+  เบอร์มือถือ when it is a mobile). LnwShop's own address helper sits above it
+  in a separate box and is left alone. The console uses no registry here: the
+  delivery address is the customer's, not the company's registered one.
 - `resize` sizes the iframe to the page (clamped to 120–900 px). The page
   answers only `https://a.lnwstore.com` and posts to that origin alone.
-- "ready" carries `protocol: 2`. The paste mode will not fill through a script
-  that sends none (≤ 1.2.0, which files everyone as a company) and says to
-  update it instead.
-- The recipient form (≥ 1.4.0) has no สถานะ or tax ID. The house number and
-  address line go into its one ที่อยู่ textarea, the phone into เบอร์โทรศัพท์
-  (and เบอร์มือถือ when it is a mobile). LnwShop's own address helper sits
-  above it in a separate box and is left alone.
+- The paste mode will not fill through a script below protocol 3 and says to
+  update it instead: ≤ 1.2.0 files everyone as a company, 1.3.x fills
+  LnwShop's address helper on the recipient form, 1.4.x cannot say which form
+  is open and clears fields with empty values.
 - After filling, no field keeps the focus: the postcode is a number input, and
   a mouse-wheel scroll would change it (1.3.1).
 

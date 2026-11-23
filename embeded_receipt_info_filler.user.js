@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Embeded receipt info filler
 // @namespace    http://tampermonkey.net/
-// @version      1.4.0
+// @version      1.5.0
 // @description  Embed receipt info filler in Lnwshop order page.
 // @author       You
 // @match        https://a.lnwstore.com/arduino4/order/info/*
@@ -20,9 +20,11 @@
 
     const SCOPE = "receipt-info-filler";
     // Sent with "ready" so the console knows which payload this script reads.
-    // 2 (1.3.0): personType / idType / email / phone. The console's paste
-    // mode refuses to fill through anything older.
-    const PROTOCOL = 2;
+    // 2 (1.3.0): personType / idType / email / phone.
+    // 3 (1.5.0): "ready" also names the open form; empty values are skipped,
+    //   never written; idType "passport".
+    // The console's paste mode refuses to fill through anything older than 3.
+    const PROTOCOL = 3;
     const EMBEDED_URL = "https://console.genlogic.co.th/#/embeded/ctp-finder";
     const EMBEDED_ORIGIN = new URL(EMBEDED_URL).origin;
     const DEBUG = false;
@@ -143,7 +145,17 @@
             ...document.querySelectorAll("#lnw-contact-popup .step-edit .contact-box"),
         ].find((box) => box.querySelector(".row-name")) ?? null;
 
-    const isRecipientForm = (box) => !box.querySelector(".row-tax_id");
+    // By the สถานะ radio, which the receipt form always shows: the tax-ID row
+    // can come and go with ประเภทเลขที่.
+    const isRecipientForm = (box) =>
+        !box.querySelector('input[name="corporate_flag"]');
+
+    // Reported with "ready": the console skips the registry on the
+    // recipient form, where the delivery address is the customer's own.
+    const openForm = () => {
+        const box = getContactBox();
+        return box ? (isRecipientForm(box) ? "recipient" : "receipt") : null;
+    };
 
     // "สถานะ" (LnwShop's form since 2026-11) and "ประเภทเลขที่" decide which
     // fields exist. Checked on the live form 2026-11-12:
@@ -220,10 +232,9 @@
             ["houseNo", houseNoInput, seg.houseNo],
             ["addrLine", addrTextarea, seg.addrLine],
             // Sent only by the pasted-text filler, and only when the customer
-            // gave one. Absent or empty means "leave the field alone": LnwShop
-            // may already hold the buyer's details.
-            !!ctp.email && ["email", box.querySelector(".col-email input"), ctp.email],
-            !!ctp.phone && ["phone", box.querySelector(".col-telephone input"), ctp.phone],
+            // gave one; applyTargets skips the empty ones.
+            ["email", box.querySelector(".col-email input"), ctp.email],
+            ["phone", box.querySelector(".col-telephone input"), ctp.phone],
         ];
         applyTargets(targets);
     };
@@ -245,16 +256,22 @@
                 box.querySelector(".row-address textarea"),
                 [seg.houseNo, seg.addrLine].filter(Boolean).join(" "),
             ],
-            !!ctp.email && ["email", byLabel("อีเมล"), ctp.email],
+            ["email", byLabel("อีเมล"), ctp.email],
             // เบอร์โทรศัพท์ is required here; the mobile, for SMS, only
             // when the number is one.
-            !!ctp.phone && ["telephone", box.querySelector(".row-telephone input"), ctp.phone],
+            ["telephone", box.querySelector(".row-telephone input"), ctp.phone],
             isMobile && ["mobile", byLabel("เบอร์มือถือ"), ctp.phone],
         ]);
     };
 
+    // An empty value is skipped, never written: LnwShop's form may already
+    // hold the field (from the shipping address, say), and clearing it would
+    // leave a half-blank address beside the old postcode.
     const applyTargets = (targets) => {
         for (const [key, el, value] of targets.filter(Boolean)) {
+            if (value == null || value === "") {
+                continue;
+            }
             if (!el) {
                 warn("field not found:", key);
                 continue;
@@ -315,6 +332,10 @@
         );
 
     const fillAddressPicker = async (box, seg) => {
+        // No postcode, no area to pick: leave LnwShop's as it is.
+        if (!seg.postcode) {
+            return;
+        }
         const picker = box.querySelector(".subdistrict-box");
         if (!picker) {
             warn("subdistrict-box not found - markup changed again");
@@ -527,7 +548,13 @@
         // rather than deliver cross-origin. Swallow it; the next tick works.
         try {
             frame.contentWindow?.postMessage(
-                { scope: SCOPE, status: 200, data: "ready", protocol: PROTOCOL },
+                {
+                    scope: SCOPE,
+                    status: 200,
+                    data: "ready",
+                    protocol: PROTOCOL,
+                    form: openForm(),
+                },
                 EMBEDED_ORIGIN
             );
         } catch (e) {

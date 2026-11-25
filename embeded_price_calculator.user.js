@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Embeded Price Calculator
 // @namespace    http://tampermonkey.net/
-// @version      1.7.0
+// @version      1.7.1
 // @description  Embed the console's pricing calculator and price setter in the Lnwshop product page.
 // @author       You
 // @match        https://a.lnwstore.com/*/inventory/product/*
@@ -136,6 +136,11 @@
     //   - ตอบทุกคำขอพร้อม id ของคำขอ: คำขอที่มาระหว่างกำลังกรอกได้คำตอบว่าไม่ได้ทำ — เดิมถูกทิ้งเงียบ หน้า console ค้าง
     //
     // 1.7.0 (GLP-275) — send_data บอกรุ่นของสคริปต์ (version) หน้า console เทียบกับรุ่นต่ำสุดที่มันต้องใช้ แล้วเตือนให้อัปเดต
+    //
+    // 1.7.1 (GLP-279) — จาก code review ทั้งฟีเจอร์:
+    //   - ไม่กรอกถ้า pid ในคำขอไม่ใช่สินค้าที่หน้านี้เปิดอยู่ (หน้า price-set วางแผนจาก pdata ที่ได้มาก่อน)
+    //   - รับข้อความจาก iframe ของตัวเองเท่านั้น (เดิมเช็กแค่ origin: กรอบอื่นของ console บนหน้านี้ส่งคำขอตั้งราคามาได้)
+    //   - ข้อความที่โชว์ในหน้า console ไม่ใช้ em dash
     // ------------------------------------------------------------------
 
     // รุ่นจากบรรทัด @version ข้างบนเอง — ไม่พิมพ์ซ้ำ · GM_info ใช้ได้แม้ @grant none (Tampermonkey เปิดให้เสมอ)
@@ -448,7 +453,7 @@
             (typeof vm !== "undefined" && Number(vm?.pdata?.props?.sale) === 1);
         if (saleOn) {
             return {
-                message: `เปิด "ลดราคาสินค้า" อยู่ (ราคาขาย ${input.value} → สุทธิ ${bb.net}) — ช่องที่กรอกได้เป็นราคาก่อนลด ไม่ได้แตะ แก้ราคาหลักเองบนฟอร์ม`,
+                message: `เปิด "ลดราคาสินค้า" อยู่ (ราคาขาย ${input.value} → สุทธิ ${bb.net}): ช่องที่กรอกได้เป็นราคาก่อนลด ไม่ได้แตะ แก้ราคาหลักเองบนฟอร์ม`,
                 dirty: false,
             };
         }
@@ -504,7 +509,7 @@
                 ok: false,
                 dirty: false,
                 message: bad.length
-                    ? `อ่านแท็บ ${bad.join(", ")} ไม่ได้ (กล่องซ้ำกับแท็บอื่น) — กดตั้งราคาใหม่อีกครั้ง`
+                    ? `อ่านแท็บ ${bad.join(", ")} ไม่ได้ (กล่องซ้ำกับแท็บอื่น): กดตั้งราคาใหม่อีกครั้ง`
                     : "ไม่พบแท็บ/กล่องราคาของช่องนี้ (ยังไม่ตั้งหมวดหมู่?)",
             };
         }
@@ -517,7 +522,7 @@
             return {
                 ok: false,
                 dirty: false,
-                message: `ป้ายบอกว่าตาม "${lost}" แต่ไม่มีแท็บชื่อนี้ — ไม่ได้แตะ (หน้า LnwShop เปลี่ยนชื่อแท็บ?)`,
+                message: `ป้ายบอกว่าตาม "${lost}" แต่ไม่มีแท็บชื่อนี้: ไม่ได้แตะ (หน้า LnwShop เปลี่ยนชื่อแท็บ?)`,
             };
         }
         const before = snapshot(own);
@@ -543,7 +548,7 @@
                 return b && near(b.net, ch.price) ? b : null;
             }, 2000);
             if (!s) {
-                return fail(`${s0.switchLabel} แล้ว แต่โชว์ ${readBox()?.net} ไม่ใช่ ${ch.price} — ราคาหลักบนฟอร์มยังไม่ใช่ราคาใหม่`);
+                return fail(`${s0.switchLabel} แล้ว แต่โชว์ ${readBox()?.net} ไม่ใช่ ${ch.price}: ราคาหลักบนฟอร์มยังไม่ใช่ราคาใหม่`);
             }
             return { ok: true, message: `${s.switchLabel} → ${s.net}` };
         }
@@ -562,7 +567,7 @@
             return {
                 ok: true,
                 message: mainTitle
-                    ? `กำหนดเป็น ${ch.price} บาท — แยกจาก "${short(mainTitle)}" (ร้านนี้ตั้งราคาที่แท็บตัวเอง)`
+                    ? `กำหนดเป็น ${ch.price} บาท แยกจาก "${short(mainTitle)}" (ร้านนี้ตั้งราคาที่แท็บตัวเอง)`
                     : `กำหนดเป็น ${ch.price} บาท`,
             };
         }
@@ -575,7 +580,7 @@
             return {
                 ok: false,
                 dirty: false,
-                message: `อ่านแท็บ ${bad.join(", ")} ไม่ได้ — ตรวจไม่ได้ว่าตาม "${short(mainTitle)}" ไหม จึงไม่เขียน`,
+                message: `อ่านแท็บ ${bad.join(", ")} ไม่ได้: ตรวจไม่ได้ว่าตาม "${short(mainTitle)}" ไหม จึงไม่เขียน`,
             };
         }
         const followers = tabs.filter((t) => t !== tab && !t.isMain && t.followsMain === mainTitle).map((t) => short(t.title));
@@ -583,7 +588,7 @@
             return {
                 ok: false,
                 dirty: false,
-                message: `ตาม "${short(mainTitle)}" อยู่ แต่ ${followers.join(", ")} ก็ตามแท็บเดียวกัน — ตั้งราคาแท็บนั้นก่อน ไม่งั้นขยับตาม`,
+                message: `ตาม "${short(mainTitle)}" อยู่ แต่ ${followers.join(", ")} ก็ตามแท็บเดียวกัน: ตั้งราคาแท็บนั้นก่อน ไม่งั้นขยับตาม`,
             };
         }
         const mb = await showTab(mainTitle);
@@ -638,8 +643,8 @@
                 r.ok = false;
                 r.dirty = true;
                 r.message = b
-                    ? `ตรวจท้ายเห็น ${b.net} (${b.switchLabel}) ไม่ใช่ ${job.ch.price} — ตอนกรอก: ${r.message}`
-                    : `ตรวจท้ายเปิดกล่องของ "${short(job.tab.title)}" ไม่ได้ — ตอนกรอก: ${r.message}`;
+                    ? `ตรวจท้ายเห็น ${b.net} (${b.switchLabel}) ไม่ใช่ ${job.ch.price} · ตอนกรอก: ${r.message}`
+                    : `ตรวจท้ายเปิดกล่องของ "${short(job.tab.title)}" ไม่ได้ · ตอนกรอก: ${r.message}`;
             }
         }
     }
@@ -656,7 +661,21 @@
                     ok: false,
                     dirty: false,
                     message:
-                        "สินค้านี้มีแบบสินค้า — LnwShop ให้ตั้งราคาที่แต่ละแบบสินค้า ไม่ใช่ที่หน้าสินค้าแม่ · เปิดหน้าแบบสินค้าแล้วกดตั้งราคาที่นั่น (ไม่ได้กรอกอะไร)",
+                        "สินค้านี้มีแบบสินค้า: LnwShop ให้ตั้งราคาที่แต่ละแบบสินค้า ไม่ใช่ที่หน้าสินค้าแม่ · เปิดหน้าแบบสินค้าแล้วกดตั้งราคาที่นั่น (ไม่ได้กรอกอะไร)",
+                },
+            ];
+        }
+        // แผนของหน้า price-set มาจาก pdata ที่ได้ไปก่อนหน้า — หน้านี้เปลี่ยนเป็นสินค้าอื่นไปแล้ว (เช่นสลับแม่/แบบสินค้า
+        // โดยไม่โหลดหน้าต่างเครื่องคิดเลขใหม่) จะกรอกราคาของสินค้าหนึ่งลงฟอร์มของอีกสินค้า
+        const pagePid = typeof vm !== "undefined" ? Number(vm?.pdata?.id) : NaN;
+        if (req.pid != null && Number(req.pid) !== pagePid) {
+            return [
+                {
+                    target: "error",
+                    label: "สินค้าไม่ตรง",
+                    ok: false,
+                    dirty: false,
+                    message: `แผนนี้เป็นของสินค้า ${req.pid} แต่หน้านี้คือสินค้า ${pagePid}: รีโหลดหน้าแล้วเปิดตั้งราคาใหม่ (ไม่ได้กรอกอะไร)`,
                 },
             ];
         }
@@ -698,7 +717,7 @@
                 label: "ตั้งราคา",
                 ok: false,
                 dirty: true,
-                message: `พังกลางทาง: ${e?.message || e} — รายการข้างบนกรอกลงฟอร์มไปแล้ว ตรวจฟอร์มก่อนกดบันทึก`,
+                message: `พังกลางทาง: ${e?.message || e} · รายการข้างบนกรอกลงฟอร์มไปแล้ว ตรวจฟอร์มก่อนกดบันทึก`,
             });
         } finally {
             if (startTab) await showTab(startTab).catch(() => null);
@@ -788,7 +807,8 @@
 
         let applying = false;
         window.addEventListener("message", (event) => {
-            if (event.origin !== embededUrl.origin || !event.data) return;
+            // iframe ของตัวเองเท่านั้น: กรอบอื่นของ console บนหน้านี้ก็มี origin เดียวกัน
+            if (event.origin !== embededUrl.origin || event.source !== calFrame.contentWindow || !event.data) return;
             if (event.data.scope !== SCOPE) return;
             if (event.data.status === "received" && handshake) {
                 clearInterval(handshake);
@@ -817,7 +837,7 @@
                             label: "ตั้งราคา",
                             ok: false,
                             dirty: false,
-                            message: "กำลังกรอกรอบก่อนหน้าอยู่ — รอให้เสร็จแล้วกดใหม่ (รอบนี้ไม่ได้กรอกอะไร)",
+                            message: "กำลังกรอกรอบก่อนหน้าอยู่: รอให้เสร็จแล้วกดใหม่ (รอบนี้ไม่ได้กรอกอะไร)",
                         },
                     ]);
                     return;

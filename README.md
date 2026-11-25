@@ -72,7 +72,10 @@ Both ends check `event.origin` before trusting a message, and the handshake
 keeps running so the link re-establishes if the iframe reloads. On the console side
 the check is `LNWSHOP_ORIGIN` in `shared/config/lnwshop.ts`. The price calculator and
 price setter pages had no check until GLP-272; since then they also post only to that
-origin.
+origin. Since GLP-279 (script 1.7.1), the price pages also check `event.source`, because a
+check on origin alone lets any window on that origin through. The console accepts only
+`window.parent` (`pages/embeded/pages/price-host.ts`), and the script accepts only its own
+iframe's `contentWindow`.
 
 Console-side counterparts live in the `management-console` repo:
 
@@ -214,6 +217,16 @@ the code that repriced the whole catalogue:
   box. Prices are set on each variant's page (`…/product/1365/1366/`), which works like a
   normal product. Since 1.5.1 (GLP-271) the script refuses at once on a parent page, with
   a single `target: "error"` row, and touches nothing.
+- **A request for another product** is refused the same way (1.7.1, GLP-279) when its
+  `pid` is not `vm.pdata.id`. The price-set page plans from pdata it received earlier, and
+  the page may have moved to another product since, for example from a parent to a
+  variant without reopening the calculator.
+- **LINE Shopping is sent as a check** (console GLP-279) whenever anything else is written,
+  even when its price does not change. pdata holds the price a tab shows, not whether the
+  tab follows the base or carries its own equal price. A `kind: "sync"` item then switches
+  the tab back to following the base if it was set apart. The crawler also opens that
+  tab every time. The script needs no change for this.
+- Results show no em dash (1.7.1).
 
 Since 1.5.0 (GLP-269; pid 91, 7 items: 17.1 s → 2.5 s):
 

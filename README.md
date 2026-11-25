@@ -133,9 +133,13 @@ Nothing is saved: the person checks the form and presses บันทึก.
 The price-set page sends `{ scope, action: "apply-prices", param: { pid, base, channels } }`
 and the userscript fills LnwShop's product form **without pressing บันทึก** — the
 person checks the form and saves. It replies `{ scope, status: "applied", results }`,
-one `{ target, label, ok, message }` per item. The page also sends
-`{ scope, status: "request" }` when it opens (it is reached by an in-frame link, so
-the iframe `load` handshake never fires for it) and the host answers with `send_data`.
+one `{ target, label, ok, message }` per item.
+
+The calculator and the price-set page open each other by in-frame links, so the iframe
+`load` handshake never fires for the page you land on. Each page therefore sends
+`{ scope, status: "request" }` every second when it opens, until the host answers with
+`send_data` (GLP-262). Each page also sends `{ scope, status: "resize", height }` to fit the
+iframe to itself, so neither page is left at the other's height.
 
 How a channel is filled mirrors `lnw-crawler-v2`'s `price_dom.ts` / `price_tabs.ts`,
 the code that repriced the whole catalogue:

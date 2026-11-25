@@ -128,12 +128,14 @@ optionally `email` and `phone`.
 
 Nothing is saved: the person checks the form and presses บันทึก.
 
-### Price setter (`embeded_price_calculator.user.js` ≥ 1.4.0)
+### Price setter (`embeded_price_calculator.user.js` ≥ 1.5.0)
 
 The price-set page sends `{ scope, action: "apply-prices", param: { pid, base, channels } }`
 and the userscript fills LnwShop's product form **without pressing บันทึก** — the
 person checks the form and saves. It replies `{ scope, status: "applied", results }`,
-one `{ target, label, ok, message }` per item.
+one `{ target, label, ok, message }` per item. `target` is `"base"`, a channel's
+instance id, or `"error"` when the run broke part-way: that row's message says the
+rows above it were already written to the form.
 
 The calculator and the price-set page open each other by in-frame links, so the iframe
 `load` handshake never fires for the page you land on. Each page therefore sends
@@ -160,11 +162,32 @@ the code that repriced the whole catalogue:
   counterpart in `price_dom.ts`.
 - Every write, including the base price, waits for `.finaltotal` to show the price
   before it counts as done.
-- After each tab click the script waits for the visible area to actually change:
-  reading the box right after `click()` still returns the previous tab's box (Vue
-  switches a moment later), which wrote values into the wrong tab in the first test.
+- LnwShop renders one channel tab's price box at a time, so a tab has to be opened to
+  read or write it. After a click the script waits until the tab is `selected`, the
+  visible area belongs to that tab's channel, and the box differs from the previous
+  one (up to 1.5 s; it takes 13–64 ms). Then it waits for the box to settle. Reading
+  right after `click()` still returns the previous tab's box, which wrote values into
+  the wrong tab in the first test. A tab that is already open is not clicked again.
 
-`window.__lnwPriceSetter.applyPrices(request)` is exposed for DevTools / tests.
+Since 1.5.0 (GLP-269; pid 91, 7 items: 17.1 s → 2.5 s):
+
+- **One pass over the tabs.** Each tab is opened once and recorded: channel, box key,
+  the main tab it follows, net. TikTok and LINE boxes are keyed by channel name
+  (`tiktok_shop`, `line_shopping`), not by instance id. If two tabs show the same box,
+  one was read before Vue switched. Both are marked unreadable, and a job that depends
+  on them is refused.
+- **Route from the live form.** The decision to write at the tab or at its main tab is
+  made from the box just opened, not from the recorded pass. After every write attempt,
+  even a refused one, the tab's real mode is recorded again, so the follower check stays
+  correct. Jobs that write through a main tab run last, as the form shows them, not by a
+  fixed instance id.
+- **No fixed sleeps.** Every step waits for the condition it needs. Selects and inputs
+  are looked up again after each change, because Vue can redraw the box.
+- **Final check.** After all writes, every ✓ row is read again: its price, and its mode
+  (its own price, following the main tab, or same as base). The base price is read
+  again too. A row that a later write moved turns ✗ with what the form actually shows.
+
+`window.__lnwPriceSetter` (`applyPrices(request)`, `mapTabs()`, `readBox()`, `channelTabs()`) is exposed for DevTools / tests.
 
 ### Embedded mode
 

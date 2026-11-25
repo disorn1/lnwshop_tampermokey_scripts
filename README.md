@@ -168,6 +168,11 @@ the code that repriced the whole catalogue:
   one (up to 1.5 s; it takes 13–64 ms). Then it waits for the box to settle. Reading
   right after `click()` still returns the previous tab's box, which wrote values into
   the wrong tab in the first test. A tab that is already open is not clicked again.
+- **Parent products** (`props.has_sub = 1`, e.g. pid 1365) have no price fields on their
+  own page. The base box says to set the price on each variant, and no channel tab has a
+  box. Prices are set on each variant's page (`…/product/1365/1366/`), which works like a
+  normal product. Since 1.5.1 (GLP-271) the script refuses at once on a parent page, with
+  a single `target: "error"` row, and touches nothing.
 
 Since 1.5.0 (GLP-269; pid 91, 7 items: 17.1 s → 2.5 s):
 

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Embeded Price Calculator
 // @namespace    http://tampermonkey.net/
-// @version      1.5.0
+// @version      1.5.1
 // @description  Embed the console's pricing calculator and price setter in the Lnwshop product page.
 // @author       You
 // @match        https://a.lnwstore.com/*/inventory/product/*
@@ -510,6 +510,20 @@
     }
 
     async function applyPrices(req) {
+        // สินค้าแม่ (props.has_sub = 1, เช่น pid 1365): หน้าแม่ไม่มีช่องราคาเลย — กล่องราคาหลักบอก "กรุณากำหนด
+        // ราคาที่แต่ละแบบสินค้า" และทุกแท็บช่องทางไม่มีกล่องราคา ราคาตั้งที่หน้าแบบสินค้า (…/product/1365/1366/)
+        // ซึ่งหน้าตาเหมือนสินค้าปกติ · 1.5.0 ไล่แท็บเปล่า ๆ ~10 วินาทีแล้วรายงานเหตุผิด ("ยังไม่ตั้งหมวดหมู่?")
+        if (typeof vm !== "undefined" && Number(vm?.pdata?.props?.has_sub) === 1) {
+            return [
+                {
+                    target: "error",
+                    label: "สินค้าแม่",
+                    ok: false,
+                    message:
+                        "สินค้านี้มีแบบสินค้า — LnwShop ให้ตั้งราคาที่แต่ละแบบสินค้า ไม่ใช่ที่หน้าสินค้าแม่ · เปิดหน้าแบบสินค้าแล้วกดตั้งราคาที่นั่น (ไม่ได้กรอกอะไร)",
+                },
+            ];
+        }
         const started = Date.now();
         const results = [];
         const startTab = channelTabs().find((t) => t.el.classList.contains("selected"))?.title || null;

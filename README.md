@@ -69,7 +69,10 @@ iframe --> host     { scope, action: "...", param: {...} }   when the user picks
 ```
 
 Both ends check `event.origin` before trusting a message, and the handshake
-keeps running so the link re-establishes if the iframe reloads.
+keeps running so the link re-establishes if the iframe reloads. On the console side
+the check is `LNWSHOP_ORIGIN` in `shared/config/lnwshop.ts`. The price calculator and
+price setter pages had no check until GLP-272; since then they also post only to that
+origin.
 
 Console-side counterparts live in the `management-console` repo:
 
@@ -130,12 +133,27 @@ Nothing is saved: the person checks the form and presses บันทึก.
 
 ### Price setter (`embeded_price_calculator.user.js` ≥ 1.5.0)
 
-The price-set page sends `{ scope, action: "apply-prices", param: { pid, base, channels } }`
+The price-set page sends `{ scope, action: "apply-prices", id, param: { pid, base, channels } }`
 and the userscript fills LnwShop's product form **without pressing บันทึก** — the
-person checks the form and saves. It replies `{ scope, status: "applied", results }`,
-one `{ target, label, ok, message }` per item. `target` is `"base"`, a channel's
-instance id, or `"error"` when the run broke part-way: that row's message says the
-rows above it were already written to the form.
+person checks the form and saves. It replies `{ scope, status: "applied", id, results }`,
+one `{ target, label, ok, message, dirty }` per item:
+
+- `target` is `"base"`, a channel's instance id, or `"error"`. `"error"` means the run
+  broke part-way (the rows above it were already written), the product is a parent, or
+  a run was already in progress.
+- `id` echoes the request's id. The page ignores an answer to a request it did not send:
+  a page re-opened mid-run must not show the previous run's results. Since 1.6.0
+  (GLP-272), a request that arrives while a run is in progress gets an immediate
+  `"error"` answer. Before, it was dropped, and the page stayed locked. The page also
+  unlocks itself if no answer comes within 2 minutes.
+- `dirty` (1.6.0) is set on every ✗ row. `false` means the row did not touch the form,
+  or touched it and put the box back as it was. `true` means the form was left changed
+  and could not be put back. The page then says not to save, but to reload LnwShop and
+  start again. A ✗ row of an older script has no `dirty`, so the page says the form may
+  have been partly changed.
+- Each channel carries `viaMain`, a copy of the crawler's `RULES` flag in
+  `channel-price-rules.ts`. It is `true` for General4 and Lazada genlogic, `false` for the
+  rest.
 
 The calculator and the price-set page open each other by in-frame links, so the iframe
 `load` handshake never fires for the page you land on. Each page therefore sends
@@ -149,9 +167,21 @@ the code that repriced the whole catalogue:
 - A tab is found by the `.../channel/<boxKey>` link inside its price box, never by
   shop name or shop id — the box identifies itself.
 - A shop tab set to "ใช้ราคาขายเหมือน X หลัก" (Shopee General4 → Shopee หลัก, Lazada
-  genlogic → Lazada หลัก) is written **at the main tab**, then re-read to confirm it
-  still follows and shows the new price. If another shop tab follows the same main
-  tab, the item is refused with a message, because that shop's price would move too.
+  genlogic → Lazada หลัก) is written **at the main tab** when its `viaMain` is true. It
+  is then re-read to confirm it still follows and shows the new price. If another shop
+  tab follows the same main tab, the item is refused with a message, because that
+  shop's price would move too.
+- A shop tab whose `viaMain` is false is written **at its own tab**, even when it follows
+  a main tab, and so stops following it (1.6.0). The crawler does the same. These items
+  go first, so a new product whose shop tabs all follow Lazada หลัก no longer has both
+  Lazada items refused. A request without `viaMain` (an older console) is routed as in
+  1.5.x.
+- A label that names a main tab no tab has (`… หลัก` with no matching title) refuses the
+  item and touches nothing (1.6.0). The crawler stops with `MAIN_TAB_NOT_FOUND` here.
+  Before, the item was written at the shop tab, which then quietly stopped following.
+- A ✗ item puts its box back: the switch, mode, unit and amount, or the base price's
+  value. A failure after writing the main tab puts the main tab back (1.6.0). If the box
+  cannot be put back, `dirty: true` says so.
 - `kind: "sync"` (LINE Shopping) flips the switch back to "ใช้ราคาขายเหมือน LnwShop",
   then checks the tab shows the planned base price.
 - The base price (`base`) is written only when "ลดราคาสินค้า" is off. With a discount on,

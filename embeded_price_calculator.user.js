@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Embeded Price Calculator
 // @namespace    http://tampermonkey.net/
-// @version      1.5.1
+// @version      1.6.0
 // @description  Embed the console's pricing calculator and price setter in the Lnwshop product page.
 // @author       You
 // @match        https://a.lnwstore.com/*/inventory/product/*
@@ -126,6 +126,14 @@
     //   - หาช่องกรอกใหม่จาก DOM ทุกครั้ง — Vue วาดกล่องใหม่ได้หลังเปลี่ยนโหมด ช่องที่จับไว้ก่อนอาจหลุดไปแล้ว
     //   - ตรวจท้าย: อ่านราคาจริงทุกรายการอีกรอบหลังกรอกครบ — การเขียนแท็บหลักทีหลังขยับแท็บที่
     //     ตามมันได้ ตรวจตอนกรอกอย่างเดียวไม่พอ
+    //
+    // 1.6.0 (GLP-272) — จาก code review รอบสอง:
+    //   - รายการที่ไม่ผ่านคืนกล่องเป็นแบบเดิม (โหมด/select/จำนวน หรือราคาหลัก) — เดิมสลับเป็นราคาแยกแล้วพังกลางทาง
+    //     ทิ้งแท็บค้างด้วยค่าเก่า ทุกแถวที่ไม่ผ่านบอก dirty: true = ฟอร์มถูกแก้ค้าง (คืนไม่ได้) ให้ console เตือนไม่ให้บันทึก
+    //   - ch.viaMain (จาก console ตาม viaMain ของ crawler): false = เขียนที่แท็บตัวเองแม้ตามแท็บหลักอยู่ — เดิม
+    //     Lazada genlogic กับ gen4.group ที่ตาม Lazada หลักทั้งคู่ถูกปฏิเสธทั้งคู่ทุกครั้ง
+    //   - ป้ายบอกว่าตามแท็บหลักที่หาไม่เจอ → ไม่แตะ (crawler: MAIN_TAB_NOT_FOUND) — เดิมเขียนที่แท็บร้านแล้วหลุดเงียบ ๆ
+    //   - ตอบทุกคำขอพร้อม id ของคำขอ: คำขอที่มาระหว่างกำลังกรอกได้คำตอบว่าไม่ได้ทำ — เดิมถูกทิ้งเงียบ หน้า console ค้าง
     // ------------------------------------------------------------------
     const USE_SAME = "ใช้ราคาขายเหมือน";
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -247,11 +255,20 @@
         return label.slice(USE_SAME.length).trim();
     }
 
-    /** ชื่อแท็บหลักที่กล่องนี้ตามอยู่ — null ถ้าแยกเอง หรือตามราคาหลัก LnwShop */
+    /** ชื่อแท็บหลักที่กล่องนี้ตามอยู่ — null ถ้าแยกเอง หรือตามราคาหลัก LnwShop (หรือหาแท็บไม่เจอ: ดู unknownMainSource) */
     function followedMainTitle(b) {
         const source = sourceOf(b);
         if (!source || !source.endsWith("หลัก")) return null;
         return channelTabs().find((t) => t.title === source || t.title.endsWith(source))?.title || null;
+    }
+
+    /**
+     * ป้ายบอกว่าตาม "… หลัก" แต่ไม่มีแท็บชื่อนั้น — คืนชื่อในป้าย · null = ไม่ใช่กรณีนี้
+     * โครงหน้าเปลี่ยน: crawler หยุด (MAIN_TAB_NOT_FOUND) ไม่เดา — เขียนที่แท็บร้านจะดึงมันออกจากแท็บหลักเงียบ ๆ
+     */
+    function unknownMainSource(b) {
+        const source = sourceOf(b);
+        return source && source.endsWith("หลัก") && !followedMainTitle(b) ? source : null;
     }
 
     /**
@@ -344,6 +361,55 @@
         return `ราคาสุทธิบนฟอร์มเป็น ${readBox()?.net} ไม่ใช่ ${price}`;
     }
 
+    /** สิ่งที่ต้องคืนให้กล่อง ถ้ากรอกไม่สำเร็จ: โหมดกับค่าที่ตั้งไว้ (ราคาสุทธิคิดจากราคาหลัก ซึ่งอาจเพิ่งเปลี่ยน จึงไม่เทียบ) */
+    function snapshot(b) {
+        return b ? { separate: b.separate, mode: b.mode, unit: b.unit, amount: b.amount } : null;
+    }
+
+    function sameState(b, snap) {
+        if (!b || !snap || b.separate !== snap.separate) return false;
+        return !snap.separate || (b.mode === snap.mode && b.unit === snap.unit && b.amount === snap.amount);
+    }
+
+    /**
+     * คืนกล่องที่เห็นให้เป็นแบบ snap — true = อ่านซ้ำหลังกล่องนิ่งแล้วเหมือนเดิมจริง
+     * setBoxPrice สลับเป็นราคาแยกก่อน แล้วค่อยตั้งโหมดและจำนวน — พังตรงกลาง (เช่น Vue ไม่รับ select) แท็บจะค้างเป็น
+     * ราคาแยกด้วยค่าเก่า ("+18%") ซึ่งกดบันทึกไปก็ได้ราคาผิด · ถ้าเขียนผ่านแท็บหลัก แท็บที่ตามมันก็ขยับตาม
+     */
+    async function restoreBox(snap) {
+        if (!snap) return false;
+        if (sameState(readBox(), snap)) return true;
+        if (!(await setSeparate(snap.separate))) return false;
+        if (snap.separate) {
+            // โหมดก่อนหน่วย: โหมด "กำหนดเป็น" ล็อกหน่วยเป็นบาท ต้องคืนโหมดก่อนหน่วยจึงจะแก้ได้
+            for (const isMode of [true, false]) {
+                const want = isMode ? snap.mode : snap.unit;
+                const sel = findSelect(isMode);
+                if (!sel || want === null || sel.value === want || sel.disabled) continue;
+                sel.value = want;
+                fire(sel, "input");
+                fire(sel, "change");
+                await settle();
+            }
+            const input = readBox()?.box.querySelector('.real-price input[type="number"]');
+            if (visible(input) && input.value !== snap.amount) {
+                input.value = snap.amount;
+                fire(input, "input");
+                fire(input, "change");
+                await settle();
+            }
+        }
+        return sameState(await settle(), snap);
+    }
+
+    /** ✗ ของรายการที่อาจแตะกล่องที่เห็นไปแล้ว: คืนกล่องเป็น snap แล้วบอกผล · dirty = คืนไม่ได้ ฟอร์มถูกแก้ค้าง */
+    async function failRestoring(message, snap) {
+        const restored = await restoreBox(snap).catch(() => false);
+        return restored
+            ? { ok: false, dirty: false, message: `${message} · คืนแท็บเป็นแบบเดิมแล้ว` }
+            : { ok: false, dirty: true, message: `${message} · คืนแท็บเป็นแบบเดิมไม่ได้` };
+    }
+
     /** กล่องราคาหลัก LnwShop (.price-editable-area นอกแท็บช่องทาง) — null ถ้าไม่มี (ราคาตามสินค้าแม่) */
     function baseBox() {
         const input = Array.from(
@@ -361,26 +427,46 @@
      * ราคาหลักที่หน้า console เทียบและวางแผนคือราคาสุทธิ (pdata.props.price = .finaltotal ของกล่อง)
      * สินค้าที่เปิด "ลดราคาสินค้า" อยู่ ช่องที่กรอกได้คือ "ราคาขาย" ก่อนลด (price_old) ไม่ใช่ราคาสุทธิ
      * — pid 3: ราคาขาย 480 ลดเหลือ 220 · เขียนลงช่องนั้นราคาสุทธิไม่ขยับ จึงไม่แตะ ให้คนแก้เอง
-     * และยืนยันผลจากราคาสุทธิ ไม่ใช่จากค่าในช่อง
+     * และยืนยันผลจากราคาสุทธิ ไม่ใช่จากค่าในช่อง · ไม่ตรง = คืนค่าเดิมในช่อง
+     * คืน null = สำเร็จ · { message, dirty } = ไม่สำเร็จ (dirty = ช่องถูกแก้ค้าง คืนค่าเดิมไม่ได้)
      */
     async function setBasePrice(price) {
         const bb = baseBox();
-        if (!bb) return "ไม่มีช่องราคาหลักให้แก้ (ราคาตามสินค้าแม่?)";
+        if (!bb) return { message: "ไม่มีช่องราคาหลักให้แก้ (ราคาตามสินค้าแม่?)", dirty: false };
         const { input, box } = bb;
-        if (input.disabled || input.readOnly) return "ช่องราคาหลักถูกล็อก";
+        if (input.disabled || input.readOnly) return { message: "ช่องราคาหลักถูกล็อก", dirty: false };
         const saleOn =
             Array.from(box.querySelectorAll("span.switch")).some(
                 (s) => (s.querySelector(".slabel")?.textContent || "").includes("ลดราคา") && s.classList.contains("switchOn"),
             ) ||
             (typeof vm !== "undefined" && Number(vm?.pdata?.props?.sale) === 1);
         if (saleOn) {
-            return `เปิด "ลดราคาสินค้า" อยู่ (ราคาขาย ${input.value} → สุทธิ ${bb.net}) — ช่องที่กรอกได้เป็นราคาก่อนลด ไม่ได้แตะ แก้ราคาหลักเองบนฟอร์ม`;
+            return {
+                message: `เปิด "ลดราคาสินค้า" อยู่ (ราคาขาย ${input.value} → สุทธิ ${bb.net}) — ช่องที่กรอกได้เป็นราคาก่อนลด ไม่ได้แตะ แก้ราคาหลักเองบนฟอร์ม`,
+                dirty: false,
+            };
         }
+        const oldValue = input.value;
+        const oldNet = bb.net;
         input.value = String(price);
         fire(input, "input");
         fire(input, "change");
         const ok = await waitFor(() => (near(baseBox()?.net, price) ? true : null), 2000);
-        return ok ? null : `ราคาสุทธิบนฟอร์มเป็น ${baseBox()?.net} ไม่ใช่ ${price}`;
+        if (ok) return null;
+        const message = `ราคาสุทธิบนฟอร์มเป็น ${baseBox()?.net} ไม่ใช่ ${price}`;
+        const again = baseBox();
+        if (again) {
+            again.input.value = oldValue;
+            fire(again.input, "input");
+            fire(again.input, "change");
+        }
+        const back = await waitFor(() => {
+            const b = baseBox();
+            return b && b.input.value === oldValue && (oldNet === null || near(b.net, oldNet)) ? true : null;
+        }, 2000);
+        return back
+            ? { message: `${message} · คืนราคาหลักเป็นแบบเดิมแล้ว`, dirty: false }
+            : { message: `${message} · คืนราคาหลักเป็นแบบเดิมไม่ได้`, dirty: true };
     }
 
     /** แท็บของช่องตามคำขอ — ร้านใน Shopee/Lazada ตรงด้วยเลข instance, ช่องร้านเดียวตรงด้วยชื่อช่อง */
@@ -400,13 +486,17 @@
     /** แท็บร้านของช่องนี้ที่อ่านไม่ได้ตอนไล่แท็บ (ดู mapTabs) */
     const unreadableOf = (tabs, channel) => tabs.filter((t) => t.unreadable && t.channel === channel).map((t) => short(t.title));
 
-    /** กรอก 1 รายการ — คืน {ok, message} · job.via = ชื่อแท็บหลักที่เขียนแทน (ไว้ให้ตรวจท้ายรู้ว่าต้องเห็นอะไร) */
+    /**
+     * กรอก 1 รายการ — คืน {ok, message, dirty} · job.via = ชื่อแท็บหลักที่เขียนแทน (ไว้ให้ตรวจท้ายรู้ว่าต้องเห็นอะไร)
+     * ไม่ผ่าน: dirty false = ไม่ได้แตะ หรือคืนกล่องเป็นแบบเดิมแล้ว · true = ฟอร์มถูกแก้ค้าง
+     */
     async function applyJob(job, tabs) {
         const { ch, tab } = job;
         if (!tab) {
             const bad = unreadableOf(tabs, ch.channel);
             return {
                 ok: false,
+                dirty: false,
                 message: bad.length
                     ? `อ่านแท็บ ${bad.join(", ")} ไม่ได้ (กล่องซ้ำกับแท็บอื่น) — กดตั้งราคาใหม่อีกครั้ง`
                     : "ไม่พบแท็บ/กล่องราคาของช่องนี้ (ยังไม่ตั้งหมวดหมู่?)",
@@ -414,25 +504,40 @@
         }
         const own = await showTab(tab.title);
         if (!own || own.areaChannel !== ch.channel || own.boxKey !== tab.boxKey) {
-            return { ok: false, message: `เปิด "${short(tab.title)}" แล้วกล่องที่เห็นไม่ใช่ของช่องนี้` };
+            return { ok: false, dirty: false, message: `เปิด "${short(tab.title)}" แล้วกล่องที่เห็นไม่ใช่ของช่องนี้` };
         }
+        const lost = unknownMainSource(own);
+        if (lost) {
+            return {
+                ok: false,
+                dirty: false,
+                message: `ป้ายบอกว่าตาม "${lost}" แต่ไม่มีแท็บชื่อนี้ — ไม่ได้แตะ (หน้า LnwShop เปลี่ยนชื่อแท็บ?)`,
+            };
+        }
+        const before = snapshot(own);
+        // รายการที่ไม่ผ่านหลังแตะกล่องของแท็บนี้แล้ว: คืนกล่อง แล้วจดโหมดจริงหลังคืน (ดูเหตุผลข้างล่าง)
+        const fail = async (message) => {
+            const r = await failRestoring(message, before);
+            tab.followsMain = followedMainTitle(readBox());
+            return r;
+        };
 
         if (ch.kind === "sync") {
             // ตามราคาหลัก LnwShop: กลับโหมด sync — ต้นทางต้องเป็น LnwShop ไม่ใช่แท็บหลัก
             const switched = await setSeparate(false);
             const s0 = readBox();
-            // จดโหมดจริงก่อนตัดสิน — แม้จะปฏิเสธ แท็บนี้ก็สลับไปตามแท็บหลักแล้ว งานที่เขียนแท็บหลักนั้นทีหลัง
-            // ต้องรู้ว่ามันตามอยู่ ไม่งั้นราคามันขยับตามโดยไม่มีใครเตือน
+            // จดโหมดจริงก่อนตัดสิน — แท็บที่สลับไปตามแท็บหลักแล้วคืนไม่ได้ งานที่เขียนแท็บหลักนั้นทีหลังต้องรู้ว่า
+            // มันตามอยู่ ไม่งั้นราคามันขยับตามโดยไม่มีใครเตือน
             tab.followsMain = followedMainTitle(s0);
-            if (!switched) return { ok: false, message: "สลับเป็นโหมดใช้ราคาเหมือน... ไม่ได้" };
-            if (tab.followsMain) return { ok: false, message: `แท็บนี้ตาม "${s0.switchLabel}" ไม่ใช่ราคาหลัก LnwShop` };
+            if (!switched) return fail("สลับเป็นโหมดใช้ราคาเหมือน... ไม่ได้");
+            if (sourceOf(s0)?.endsWith("หลัก")) return fail(`แท็บนี้ตาม "${s0.switchLabel}" ไม่ใช่ราคาหลัก LnwShop`);
             // ต้องโชว์ราคาหลักตามแผน — ไม่ตรง = ราคาหลักไม่ได้เป็นค่าใหม่ (เช่นสินค้าลดราคาที่ไม่ได้แตะราคาหลัก)
             const s = await waitFor(() => {
                 const b = readBox();
                 return b && near(b.net, ch.price) ? b : null;
             }, 2000);
             if (!s) {
-                return { ok: false, message: `${s0.switchLabel} แล้ว แต่โชว์ ${readBox()?.net} ไม่ใช่ ${ch.price} — ราคาหลักบนฟอร์มยังไม่ใช่ราคาใหม่` };
+                return fail(`${s0.switchLabel} แล้ว แต่โชว์ ${readBox()?.net} ไม่ใช่ ${ch.price} — ราคาหลักบนฟอร์มยังไม่ใช่ราคาใหม่`);
             }
             return { ok: true, message: `${s.switchLabel} → ${s.net}` };
         }
@@ -441,11 +546,19 @@
         // หลุดจากแท็บหลักเงียบ ๆ (ตรวจท้ายก็ผ่าน เพราะเห็นราคาแยกตรงตามที่สั่ง)
         const mainTitle = followedMainTitle(own);
         tab.followsMain = mainTitle;
-        if (!mainTitle) {
+        // ch.viaMain false = ร้านที่ crawler เขียนที่แท็บตัวเองเสมอ (gen4.group, Shopee genlogic, …): ตามแท็บหลักอยู่
+        // ก็เขียนที่นี่ ร้านนี้จึงแยกออกจากแท็บหลัก — สองร้านที่ตามแท็บหลักเดียวกันมีราคาตามกฎต่างกัน ตามด้วยกันไม่ได้
+        // · undefined = console ไม่ได้บอก (ก่อน GLP-272): ตามแท็บหลักอยู่ = เขียนที่แท็บหลัก แบบ 1.5.x
+        if (!mainTitle || ch.viaMain === false) {
             const err = await setBoxPrice(ch.price);
-            tab.followsMain = followedMainTitle(readBox()); // โหมดจริงหลังเขียน ผ่านหรือไม่ก็ตาม
-            if (err) return { ok: false, message: err };
-            return { ok: true, message: `กำหนดเป็น ${ch.price} บาท` };
+            if (err) return fail(err);
+            tab.followsMain = followedMainTitle(readBox()); // โหมดจริงหลังเขียน
+            return {
+                ok: true,
+                message: mainTitle
+                    ? `กำหนดเป็น ${ch.price} บาท — แยกจาก "${short(mainTitle)}" (ร้านนี้ตั้งราคาที่แท็บตัวเอง)`
+                    : `กำหนดเป็น ${ch.price} บาท`,
+            };
         }
 
         // ตามแท็บหลักอยู่ → เขียนที่แท็บหลัก แต่ก่อนนั้นดูว่ามีแท็บร้านอื่นตามแท็บหลักเดียวกันไหม
@@ -453,23 +566,37 @@
         // แท็บร้านของช่องเดียวกันที่อ่านไม่ได้ อาจตามแท็บหลักนี้อยู่ — ตรวจไม่ได้ก็ไม่เขียน
         const bad = unreadableOf(tabs, ch.channel);
         if (bad.length) {
-            return { ok: false, message: `อ่านแท็บ ${bad.join(", ")} ไม่ได้ — ตรวจไม่ได้ว่าตาม "${short(mainTitle)}" ไหม จึงไม่เขียน` };
+            return {
+                ok: false,
+                dirty: false,
+                message: `อ่านแท็บ ${bad.join(", ")} ไม่ได้ — ตรวจไม่ได้ว่าตาม "${short(mainTitle)}" ไหม จึงไม่เขียน`,
+            };
         }
         const followers = tabs.filter((t) => t !== tab && !t.isMain && t.followsMain === mainTitle).map((t) => short(t.title));
         if (followers.length) {
             return {
                 ok: false,
+                dirty: false,
                 message: `ตาม "${short(mainTitle)}" อยู่ แต่ ${followers.join(", ")} ก็ตามแท็บเดียวกัน — ตั้งราคาแท็บนั้นก่อน ไม่งั้นขยับตาม`,
             };
         }
         const mb = await showTab(mainTitle);
-        if (!mb || mb.areaChannel !== ch.channel || mb.boxKey) return { ok: false, message: `เปิด "${short(mainTitle)}" ไม่ได้` };
+        if (!mb || mb.areaChannel !== ch.channel || mb.boxKey) {
+            return { ok: false, dirty: false, message: `เปิด "${short(mainTitle)}" ไม่ได้` };
+        }
+        const mainBefore = snapshot(mb);
         const err = await setBoxPrice(ch.price);
-        if (err) return { ok: false, message: `ที่ ${short(mainTitle)}: ${err}` };
+        if (err) return failRestoring(`ที่ ${short(mainTitle)}: ${err}`, mainBefore);
         // กลับมาดูแท็บร้าน: ต้องยังตามแท็บหลักและโชว์ราคาใหม่
         const back = await showTab(tab.title);
         if (!back || back.boxKey !== tab.boxKey || followedMainTitle(back) !== mainTitle || !near(back.net, ch.price)) {
-            return { ok: false, message: `ตั้ง ${short(mainTitle)} แล้ว แต่แท็บร้านโชว์ ${back?.net} (${back?.switchLabel})` };
+            const message = `ตั้ง ${short(mainTitle)} แล้ว แต่แท็บร้านโชว์ ${back?.net} (${back?.switchLabel})`;
+            // แท็บหลักถูกเขียนไปแล้ว — กลับไปคืนมัน ไม่งั้นแท็บร้านทุกแท็บที่ตามมันขยับค้างไว้
+            const m2 = await showTab(mainTitle);
+            if (!m2 || m2.areaChannel !== ch.channel || m2.boxKey) {
+                return { ok: false, dirty: true, message: `${message} · เปิด "${short(mainTitle)}" เพื่อคืนค่าไม่ได้` };
+            }
+            return failRestoring(message, mainBefore);
         }
         job.via = mainTitle;
         return { ok: true, message: `กำหนดเป็น ${ch.price} บาท ที่ "${short(mainTitle)}" (แท็บร้านตามอยู่)` };
@@ -477,14 +604,15 @@
 
     /**
      * ตรวจท้าย: อ่านฟอร์มจริงทุกรายการที่ผ่านอีกรอบหลังกรอกครบ — การเขียนแท็บหลักหรือราคาหลักทีหลัง
-     * ขยับแท็บที่ตามมันได้ · ไม่ตรง (ราคา หรือโหมด) → ✗ พร้อมสิ่งที่เห็นจริง
+     * ขยับแท็บที่ตามมันได้ · ไม่ตรง (ราคา หรือโหมด) → ✗ พร้อมสิ่งที่เห็นจริง และ dirty: รายการนี้ถูกเขียนไปแล้ว
+     * แต่ฟอร์มไม่ได้เป็นตามที่สั่ง (ไม่คืนค่า: สิ่งที่ขยับมันอาจเป็นรายการอื่นที่ผ่าน)
      */
     async function verifyAll(req, jobs, results) {
         const baseResult = results.find((r) => r.target === "base");
         if (baseResult?.ok) {
             const net = baseBox()?.net ?? null;
             if (near(net, req.base)) baseResult.message += " · ตรวจท้ายตรง";
-            else Object.assign(baseResult, { ok: false, message: `ตรวจท้ายเห็น ${net} ไม่ใช่ ${req.base}` });
+            else Object.assign(baseResult, { ok: false, dirty: true, message: `ตรวจท้ายเห็น ${net} ไม่ใช่ ${req.base}` });
         }
         for (const job of jobs) {
             const r = job.result;
@@ -502,6 +630,7 @@
                 r.message += " · ตรวจท้ายตรง";
             } else {
                 r.ok = false;
+                r.dirty = true;
                 r.message = b
                     ? `ตรวจท้ายเห็น ${b.net} (${b.switchLabel}) ไม่ใช่ ${job.ch.price} — ตอนกรอก: ${r.message}`
                     : `ตรวจท้ายเปิดกล่องของ "${short(job.tab.title)}" ไม่ได้ — ตอนกรอก: ${r.message}`;
@@ -519,6 +648,7 @@
                     target: "error",
                     label: "สินค้าแม่",
                     ok: false,
+                    dirty: false,
                     message:
                         "สินค้านี้มีแบบสินค้า — LnwShop ให้ตั้งราคาที่แต่ละแบบสินค้า ไม่ใช่ที่หน้าสินค้าแม่ · เปิดหน้าแบบสินค้าแล้วกดตั้งราคาที่นั่น (ไม่ได้กรอกอะไร)",
                 },
@@ -530,22 +660,27 @@
         // ราคาหลักก่อน: ช่องที่ตามราคาหลัก (LINE, แท็บหลักที่ sync) ต้องเห็นค่าใหม่ตอนกรอก/ตรวจ
         if (req.base !== null && req.base !== undefined) {
             const err = await setBasePrice(req.base);
-            results.push({ target: "base", label: "ราคาหลัก LnwShop", ok: !err, message: err || `ตั้งเป็น ${req.base} บาท` });
+            results.push(
+                err
+                    ? { target: "base", label: "ราคาหลัก LnwShop", ok: false, dirty: err.dirty, message: err.message }
+                    : { target: "base", label: "ราคาหลัก LnwShop", ok: true, message: `ตั้งเป็น ${req.base} บาท` },
+            );
         }
         // ส่วนที่เหลือพังได้ (DOM หายกลางทาง) — อย่าให้ผลของราคาหลักที่กรอกไปแล้วหาย และกลับแท็บเดิมเสมอ
         try {
             const tabs = await mapTabs();
             const jobs = (req.channels || []).map((ch) => ({ ch, tab: findTab(tabs, ch), via: null, result: null }));
             // แท็บที่เขียนที่ตัวเองก่อน แล้วค่อยแท็บที่ต้องเขียนผ่านแท็บหลัก (ดูเหตุผลใน applyJob) — ดูจากฟอร์มจริง
-            // ไม่ใช่เลข instance ตายตัว (1.4.x ล็อก 1005/1003 ไว้)
-            const viaMain = (j) => Number(!!(j.tab && j.ch.kind === "set" && j.tab.followsMain));
+            // ไม่ใช่เลข instance ตายตัว (1.4.x ล็อก 1005/1003 ไว้) · viaMain false เขียนที่ตัวเองแม้ตามแท็บหลักอยู่
+            // จึงไปก่อน: แยกออกจากแท็บหลักแล้ว ร้านที่ต้องเขียนผ่านแท็บหลักถึงไม่ถูกปฏิเสธเพราะมัน
+            const viaMain = (j) => Number(!!(j.tab && j.ch.kind === "set" && j.tab.followsMain && j.ch.viaMain !== false));
             jobs.sort((a, b) => viaMain(a) - viaMain(b));
             for (const job of jobs) {
                 let r;
                 try {
                     r = await applyJob(job, tabs);
                 } catch (e) {
-                    r = { ok: false, message: `พัง: ${e?.message || e}` };
+                    r = { ok: false, dirty: true, message: `พัง: ${e?.message || e}` };
                 }
                 job.result = { target: job.ch.instance, label: job.ch.label, ...r };
                 results.push(job.result);
@@ -556,6 +691,7 @@
                 target: "error",
                 label: "ตั้งราคา",
                 ok: false,
+                dirty: true,
                 message: `พังกลางทาง: ${e?.message || e} — รายการข้างบนกรอกลงฟอร์มไปแล้ว ตรวจฟอร์มก่อนกดบันทึก`,
             });
         } finally {
@@ -661,16 +797,31 @@
             ) {
                 calFrame.style.height = event.data.height + "px";
             }
-            if (event.data.action === "apply-prices" && event.data.param && !applying) {
+            if (event.data.action === "apply-prices" && event.data.param) {
+                // ตอบทุกคำขอพร้อม id ของมัน — หน้า price-set ล็อกช่องทั้งหน้าจนได้คำตอบ และรับเฉพาะคำตอบของคำขอตัวเอง
+                // (หน้าที่เปิดใหม่ระหว่างกรอกไม่รับผลของรอบก่อน)
+                const id = event.data.id ?? null;
+                const reply = (results) =>
+                    calFrame.contentWindow?.postMessage({ scope: SCOPE, status: "applied", id, results }, embededUrl.origin);
+                if (applying) {
+                    // เดิมทิ้งเงียบ ๆ: กลับไปเครื่องคิดเลขแล้วกลับมากดใหม่ระหว่างกรอก หน้านั้นค้างจนรีโหลด
+                    reply([
+                        {
+                            target: "error",
+                            label: "ตั้งราคา",
+                            ok: false,
+                            dirty: false,
+                            message: "กำลังกรอกรอบก่อนหน้าอยู่ — รอให้เสร็จแล้วกดใหม่ (รอบนี้ไม่ได้กรอกอะไร)",
+                        },
+                    ]);
+                    return;
+                }
                 applying = true;
                 applyPrices(event.data.param)
-                    .catch((e) => [{ target: "all", label: "ตั้งราคา", ok: false, message: `พัง: ${e?.message || e}` }])
+                    .catch((e) => [{ target: "error", label: "ตั้งราคา", ok: false, dirty: true, message: `พัง: ${e?.message || e}` }])
                     .then((results) => {
                         applying = false;
-                        calFrame.contentWindow?.postMessage(
-                            { scope: SCOPE, status: "applied", results },
-                            embededUrl.origin,
-                        );
+                        reply(results);
                     });
             }
         });

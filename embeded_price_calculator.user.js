@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Embeded Price Calculator
 // @namespace    http://tampermonkey.net/
-// @version      1.6.0
+// @version      1.7.0
 // @description  Embed the console's pricing calculator and price setter in the Lnwshop product page.
 // @author       You
 // @match        https://a.lnwstore.com/*/inventory/product/*
@@ -134,7 +134,13 @@
     //     Lazada genlogic กับ gen4.group ที่ตาม Lazada หลักทั้งคู่ถูกปฏิเสธทั้งคู่ทุกครั้ง
     //   - ป้ายบอกว่าตามแท็บหลักที่หาไม่เจอ → ไม่แตะ (crawler: MAIN_TAB_NOT_FOUND) — เดิมเขียนที่แท็บร้านแล้วหลุดเงียบ ๆ
     //   - ตอบทุกคำขอพร้อม id ของคำขอ: คำขอที่มาระหว่างกำลังกรอกได้คำตอบว่าไม่ได้ทำ — เดิมถูกทิ้งเงียบ หน้า console ค้าง
+    //
+    // 1.7.0 (GLP-275) — send_data บอกรุ่นของสคริปต์ (version) หน้า console เทียบกับรุ่นต่ำสุดที่มันต้องใช้ แล้วเตือนให้อัปเดต
     // ------------------------------------------------------------------
+
+    // รุ่นจากบรรทัด @version ข้างบนเอง — ไม่พิมพ์ซ้ำ · GM_info ใช้ได้แม้ @grant none (Tampermonkey เปิดให้เสมอ)
+    // ไม่มี GM_info (เรียกนอก Tampermonkey) = null → console ถือว่ารุ่นเก่า
+    const SCRIPT_VERSION = typeof GM_info !== "undefined" ? GM_info?.script?.version || null : null;
     const USE_SAME = "ใช้ราคาขายเหมือน";
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const visible = (el) => !!el && el.offsetParent !== null;
@@ -767,7 +773,7 @@
             // falsy on any page that does not define it.
             if (typeof vm !== "undefined" && vm?.pdata) {
                 calFrame.contentWindow?.postMessage(
-                    { scope: SCOPE, status: "send_data", data: vm.pdata },
+                    { scope: SCOPE, status: "send_data", data: vm.pdata, version: SCRIPT_VERSION },
                     embededUrl.origin,
                 );
                 return true;

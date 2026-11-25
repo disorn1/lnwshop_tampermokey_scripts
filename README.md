@@ -161,6 +161,17 @@ The calculator and the price-set page open each other by in-frame links, so the 
 `send_data` (GLP-262). Each page also sends `{ scope, status: "resize", height }` to fit the
 iframe to itself, so neither page is left at the other's height.
 
+Since 1.7.0 (GLP-275), `send_data` also carries `version`, the script's own `@version`, read
+through `GM_info`, which Tampermonkey provides even with `@grant none`. Both pages compare
+it with `MIN_PRICE_USERSCRIPT` in the console's
+`pages/embeded/pages/price-cal-filler/userscript-version.ts`. When the script is older, or
+sends no version (≤ 1.6.0), they show a bar telling the person to update it in
+Tampermonkey. The check is against a minimum, not an exact match, because the script ships
+on push and the console deploys separately. It only warns, and blocks nothing. When the
+console starts needing something new from the script, raise the minimum: push that script
+version first, then deploy the console. Otherwise every machine shows the warning while
+there is nothing to update to.
+
 How a channel is filled mirrors `lnw-crawler-v2`'s `price_dom.ts` / `price_tabs.ts`,
 the code that repriced the whole catalogue:
 

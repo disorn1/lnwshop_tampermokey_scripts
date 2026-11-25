@@ -150,8 +150,16 @@ the code that repriced the whole catalogue:
   genlogic → Lazada หลัก) is written **at the main tab**, then re-read to confirm it
   still follows and shows the new price. If another shop tab follows the same main
   tab, the item is refused with a message, because that shop's price would move too.
-- `kind: "sync"` (LINE Shopping) flips the switch back to "ใช้ราคาขายเหมือน LnwShop".
-- Every write waits for `.finaltotal` to show the price before it counts as done.
+- `kind: "sync"` (LINE Shopping) flips the switch back to "ใช้ราคาขายเหมือน LnwShop",
+  then checks the tab shows the planned base price.
+- The base price (`base`) is written only when "ลดราคาสินค้า" is off. With a discount on,
+  the editable field is ราคาขาย before the discount (`price_old`), while `base` is the net
+  price after it (`pdata.props.price`): pid 3 is ราคาขาย 480, ลดเหลือ 220. Writing there
+  leaves the net unchanged, so the item is refused and the person edits the form
+  (GLP-263, 1.4.1). The crawler never writes the base price, so this part has no
+  counterpart in `price_dom.ts`.
+- Every write, including the base price, waits for `.finaltotal` to show the price
+  before it counts as done.
 - After each tab click the script waits for the visible area to actually change:
   reading the box right after `click()` still returns the previous tab's box (Vue
   switches a moment later), which wrote values into the wrong tab in the first test.

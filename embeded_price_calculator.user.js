@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Embeded Price Calculator
 // @namespace    http://tampermonkey.net/
-// @version      1.4.0
+// @version      1.4.1
 // @description  Embed the console's pricing calculator and price setter in the Lnwshop product page.
 // @author       You
 // @match        https://a.lnwstore.com/*/inventory/product/*
@@ -278,18 +278,41 @@
         return ok ? null : `ราคาสุทธิบนฟอร์มเป็น ${readBox()?.net} ไม่ใช่ ${price}`;
     }
 
-    /** ราคาหลัก LnwShop — กล่อง .price-editable-area นอกแท็บช่องทาง (สินค้าลูกที่ราคาตามแม่ไม่มี) */
+    /**
+     * ราคาหลัก LnwShop — กล่อง .price-editable-area นอกแท็บช่องทาง (สินค้าลูกที่ราคาตามแม่ไม่มี)
+     *
+     * ราคาหลักที่หน้า console เทียบและวางแผนคือราคาสุทธิ (pdata.props.price = .finaltotal ของกล่อง)
+     * สินค้าที่เปิด "ลดราคาสินค้า" อยู่ ช่องที่กรอกได้คือ "ราคาขาย" ก่อนลด (price_old) ไม่ใช่ราคาสุทธิ
+     * — pid 3: ราคาขาย 480 ลดเหลือ 220 · เขียนลงช่องนั้นราคาสุทธิไม่ขยับ จึงไม่แตะ ให้คนแก้เอง
+     * และยืนยันผลจากราคาสุทธิ ไม่ใช่จากค่าในช่อง
+     */
     async function setBasePrice(price) {
         const input = Array.from(
             document.querySelectorAll('.price-editable-area.price-box-area .real-price input[type="number"]'),
         ).find((i) => visible(i) && !i.closest(".tab-channel-area"));
         if (!input) return "ไม่มีช่องราคาหลักให้แก้ (ราคาตามสินค้าแม่?)";
         if (input.disabled || input.readOnly) return "ช่องราคาหลักถูกล็อก";
+        const box = input.closest(".price-box-area");
+        const net = () => {
+            const n = parseFloat((box.querySelector(".finaltotal .total")?.textContent || "").replace(/,/g, ""));
+            return Number.isFinite(n) ? n : null;
+        };
+        const saleOn =
+            Array.from(box.querySelectorAll("span.switch")).some(
+                (s) => (s.querySelector(".slabel")?.textContent || "").includes("ลดราคา") && s.classList.contains("switchOn"),
+            ) ||
+            (typeof vm !== "undefined" && Number(vm?.pdata?.props?.sale) === 1);
+        if (saleOn) {
+            return `เปิด "ลดราคาสินค้า" อยู่ (ราคาขาย ${input.value} → สุทธิ ${net()}) — ช่องที่กรอกได้เป็นราคาก่อนลด ไม่ได้แตะ แก้ราคาหลักเองบนฟอร์ม`;
+        }
         input.value = String(price);
         fire(input, "input");
         fire(input, "change");
-        await sleep(300);
-        return Number(input.value) === Number(price) ? null : `ฟอร์มรับค่าเป็น ${input.value}`;
+        const ok = await waitFor(() => {
+            const n = net();
+            return n !== null && Math.abs(n - price) < 0.005 ? true : null;
+        }, 3000);
+        return ok ? null : `ราคาสุทธิบนฟอร์มเป็น ${net()} ไม่ใช่ ${price}`;
     }
 
     /** ช่อง 1 ตัวตามคำขอของหน้า console — คืน {ok, message} */
@@ -313,8 +336,17 @@
         if (ch.kind === "sync") {
             // ตามราคาหลัก LnwShop: กลับโหมด sync — ต้นทางต้องเป็น LnwShop ไม่ใช่แท็บหลัก
             if (!(await setSeparate(false))) return { ok: false, message: "สลับเป็นโหมดใช้ราคาเหมือน... ไม่ได้" };
-            const s = readBox();
-            if (followedMainTab(s)) return { ok: false, message: `แท็บนี้ตาม "${s.switchLabel}" ไม่ใช่ราคาหลัก LnwShop` };
+            const s0 = readBox();
+            if (followedMainTab(s0)) return { ok: false, message: `แท็บนี้ตาม "${s0.switchLabel}" ไม่ใช่ราคาหลัก LnwShop` };
+            // ต้องโชว์ราคาหลักตามแผน — ไม่ตรง = ราคาหลักไม่ได้เป็นค่าใหม่ (เช่นสินค้าลดราคาที่ไม่ได้แตะราคาหลัก)
+            const s =
+                (await waitFor(() => {
+                    const b = readBox();
+                    return b && b.net !== null && Math.abs(b.net - ch.price) < 0.005 ? b : null;
+                }, 3000)) || readBox();
+            if (!s || s.net === null || Math.abs(s.net - ch.price) >= 0.005) {
+                return { ok: false, message: `${s0.switchLabel} แล้ว แต่โชว์ ${s?.net} ไม่ใช่ ${ch.price} — ราคาหลักบนฟอร์มยังไม่ใช่ราคาใหม่` };
+            }
             return { ok: true, message: `${s.switchLabel} → ${s.net}` };
         }
 
